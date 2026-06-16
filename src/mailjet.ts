@@ -50,7 +50,7 @@ async function verifyMailjetMessage(messageUuid: string) {
       };
     }
   }
-  throw new Error("Mailjet accepted the OTP email but did not record it in message history");
+  return null;
 }
 
 export async function sendEmailOtp(params: {
@@ -124,6 +124,13 @@ export async function sendEmailOtp(params: {
   }
 
   const delivery = await verifyMailjetMessage(messageUuid);
+  if (!delivery) {
+    console.warn("Mailjet accepted OTP email but message history lookup did not find it yet", {
+      messageUuid,
+      messageHref,
+      toDomain: params.toEmail.split("@")[1]?.toLowerCase() ?? "unknown",
+    });
+  }
 
   otpStore.set(otpKey(params.userId, params.toEmail), {
     codeHash: hashOtp(code),
