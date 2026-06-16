@@ -129,16 +129,17 @@ chatRouter.post("/users/open-direct", async (req, res) => {
 chatRouter.post("/offers/:id/open", async (req, res) => {
   const offer = await OfferModel.findById(req.params.id).populate("userId");
   if (!offer || offer.status !== "active") return res.status(404).json({ error: "Offer not found" });
-  if (String(offer.userId._id) === req.userId) return res.status(400).json({ error: "You cannot start a trade with your own offer" });
+  if (!offer.userId || !(offer.userId as any)._id) return res.status(404).json({ error: "Offer owner not found" });
+  if (String((offer.userId as any)._id) === req.userId) return res.status(400).json({ error: "You cannot start a trade with your own offer" });
 
   let conversation = await ConversationModel.findOne({
     isGroup: false,
-    memberIds: { $all: [req.user!._id, offer.userId._id], $size: 2 },
+    memberIds: { $all: [req.user!._id, (offer.userId as any)._id], $size: 2 },
   });
   if (!conversation) {
     conversation = await ConversationModel.create({
       isGroup: false,
-      memberIds: [req.user!._id, offer.userId._id],
+      memberIds: [req.user!._id, (offer.userId as any)._id],
       createdBy: req.user!._id,
     });
   }

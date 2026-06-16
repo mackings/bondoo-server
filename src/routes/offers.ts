@@ -29,7 +29,7 @@ offersRouter.get("/", async (req, res) => {
   if (["buy", "sell"].includes(side)) filter.side = side;
 
   const offers = await OfferModel.find(filter).populate("userId").sort({ updatedAt: -1 }).limit(100);
-  res.json(offers.map(offerJson));
+  res.json(offers.filter((offer) => offer.userId).map(offerJson));
 });
 
 offersRouter.post("/", async (req, res) => {
