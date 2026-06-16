@@ -10,7 +10,6 @@ type OtpRecord = {
 const otpStore = new Map<string, OtpRecord>();
 const otpTtlMs = 10 * 60 * 1000;
 const maxAttempts = 5;
-const mailjetBaseUrl = "https://api.mailjet.com";
 
 function hashOtp(code: string) {
   return createHash("sha256").update(code).digest("hex");
@@ -18,10 +17,6 @@ function hashOtp(code: string) {
 
 function otpKey(userId: string, destination: string) {
   return `${userId}:${destination.toLowerCase()}`;
-}
-
-function mailjetAuthHeader() {
-  return `Basic ${Buffer.from(`${config.mailjetApiKey}:${config.mailjetApiSecret}`).toString("base64")}`;
 }
 
 export async function sendEmailOtp(params: {
@@ -34,10 +29,11 @@ export async function sendEmailOtp(params: {
   }
 
   const code = randomInt(1000, 10000).toString();
-  const response = await fetch(`${mailjetBaseUrl}/v3.1/send`, {
+  const auth = Buffer.from(`${config.mailjetApiKey}:${config.mailjetApiSecret}`).toString("base64");
+  const response = await fetch("https://api.mailjet.com/v3.1/send", {
     method: "POST",
     headers: {
-      Authorization: mailjetAuthHeader(),
+      Authorization: `Basic ${auth}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -81,7 +77,6 @@ export async function sendEmailOtp(params: {
   const status = message?.Status;
   const to = message?.To?.[0];
   const messageId = to?.MessageID ?? to?.MessageUUID ?? null;
-  const messageHref = to?.MessageHref ?? null;
   if (status !== "success") {
     console.error("Mailjet rejected OTP email", {
       status,
@@ -100,11 +95,10 @@ export async function sendEmailOtp(params: {
   console.log("Mailjet OTP email accepted", {
     status,
     messageId,
-    messageHref,
     toDomain: params.toEmail.split("@")[1]?.toLowerCase() ?? "unknown",
   });
 
-  return { status, messageId, messageHref };
+  return { status, messageId };
 }
 
 export function verifyEmailOtp(params: {

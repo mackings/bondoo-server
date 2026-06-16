@@ -42,23 +42,13 @@ authRouter.post("/signup", async (req, res) => {
     { userId: user._id, asset: "USDT", balance: 0 },
   ]);
 
-  let emailOtp: Awaited<ReturnType<typeof sendEmailOtp>> | null = null;
-  try {
-    emailOtp = await sendEmailOtp({
-      userId: String(user._id),
-      toEmail: user.email,
-      toName: user.displayName,
-    });
-  } catch (error) {
-    console.error("Signup email OTP send failed", error);
-  }
-
-  res.status(201).json({
-    token: signToken(user),
-    user: userPublic(user),
-    email_otp_sent: emailOtp !== null,
-    mailjet: emailOtp,
+  await sendEmailOtp({
+    userId: String(user._id),
+    toEmail: user.email,
+    toName: user.displayName,
   });
+
+  res.status(201).json({ token: signToken(user), user: userPublic(user) });
 });
 
 authRouter.post("/signin", async (req, res) => {
