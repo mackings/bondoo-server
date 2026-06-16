@@ -28,7 +28,7 @@ export async function sendEmailOtp(params: {
     throw new Error("Mailjet is not configured");
   }
 
-  const code = randomInt(100000, 1000000).toString();
+  const code = randomInt(1000, 10000).toString();
   otpStore.set(otpKey(params.userId, params.toEmail), {
     codeHash: hashOtp(code),
     expiresAt: Date.now() + otpTtlMs,

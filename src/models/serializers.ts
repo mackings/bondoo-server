@@ -14,6 +14,17 @@ export function userPublic(user: any) {
     role: user.role,
     linked_btc_address: user.linkedBtcAddress ?? null,
     linked_eth_address: user.linkedEthAddress ?? null,
+    bank_accounts: (user.bankAccounts ?? []).map((account: any) => ({
+      bank_name: account.bankName,
+      account_name: account.accountName,
+      account_number: account.accountNumber,
+      currency: account.currency,
+    })),
+    payout_wallets: (user.payoutWallets ?? []).map((wallet: any) => ({
+      asset: wallet.asset,
+      provider: wallet.provider,
+      address: wallet.address,
+    })),
     email_verified: user.emailVerified,
     created_at: user.createdAt,
     updated_at: user.updatedAt,

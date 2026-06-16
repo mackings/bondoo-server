@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import { Router } from "express";
 import { z } from "zod";
 import { requireAuth, signToken } from "../middleware/auth.js";
+import { sendEmailOtp } from "../mailjet.js";
 import { userPublic } from "../models/serializers.js";
 import { UserModel } from "../models/user.js";
 import { WalletModel } from "../models/wallet.js";
@@ -40,6 +41,12 @@ authRouter.post("/signup", async (req, res) => {
     { userId: user._id, asset: "USDC", balance: 0 },
     { userId: user._id, asset: "USDT", balance: 0 },
   ]);
+
+  await sendEmailOtp({
+    userId: String(user._id),
+    toEmail: user.email,
+    toName: user.displayName,
+  });
 
   res.status(201).json({ token: signToken(user), user: userPublic(user) });
 });
