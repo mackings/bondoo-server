@@ -10,6 +10,7 @@ import { authRouter } from "./routes/auth.js";
 import { chatRouter } from "./routes/chat.js";
 import { meRouter } from "./routes/me.js";
 import { offersRouter } from "./routes/offers.js";
+import { ratesRouter } from "./routes/rates.js";
 
 const app = express();
 
@@ -25,6 +26,7 @@ app.use("/auth", authRouter);
 app.use("/me", meRouter);
 app.use("/chat", chatRouter);
 app.use("/offers", offersRouter);
+app.use("/rates", ratesRouter);
 app.use("/admin", adminRouter);
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
