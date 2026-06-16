@@ -71,12 +71,17 @@ meRouter.get("/wallets", async (req, res) => {
 });
 
 meRouter.post("/otp/email/send", async (req, res) => {
-  const mailjet = await sendEmailOtp({
-    userId: req.userId!,
-    toEmail: req.user!.email,
-    toName: req.user!.displayName,
-  });
-  res.json({ ok: true, provider: "mailjet", mailjet });
+  try {
+    const mailjet = await sendEmailOtp({
+      userId: req.userId!,
+      toEmail: req.user!.email,
+      toName: req.user!.displayName,
+    });
+    res.json({ ok: true, provider: "mailjet", mailjet });
+  } catch (error) {
+    console.error("Email OTP send failed", error);
+    res.status(502).json({ error: "Unable to send verification email. Please try again." });
+  }
 });
 
 meRouter.post("/otp/email/verify", async (req, res) => {
