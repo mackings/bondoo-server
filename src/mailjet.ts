@@ -1,4 +1,6 @@
 import { randomInt, createHash } from "node:crypto";
+import axios from "axios";
+import nodemailer from "nodemailer";
 import { config } from "./config.js";
 
 type OtpRecord = {
@@ -6,6 +8,10 @@ type OtpRecord = {
   expiresAt: number;
   attempts: number;
 };
+
+type SendEmailResult =
+  | { success: true; messageId: string | number | null }
+  | { success: false; error: string };
 
 const otpStore = new Map<string, OtpRecord>();
 const otpTtlMs = 10 * 60 * 1000;
@@ -19,71 +25,122 @@ function otpKey(userId: string, destination: string) {
   return `${userId}:${destination.toLowerCase()}`;
 }
 
+const createTransporter = () => {
+  return nodemailer.createTransport({
+    host: process.env.SMTP_HOST || "smtp.gmail.com",
+    port: Number(process.env.SMTP_PORT) || 587,
+    secure: false,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+    tls: {
+      rejectUnauthorized: false,
+    },
+  });
+};
+
+const buildRecipientList = (to: string | string[]) => {
+  if (Array.isArray(to)) return to.filter(Boolean).map((email) => ({ Email: email }));
+  if (typeof to === "string") return [{ Email: to }];
+  return [];
+};
+
+const getMailjetFrom = () => {
+  const email = process.env.MAILJET_FROM_EMAIL || process.env.SMTP_USER;
+  const name = process.env.MAILJET_FROM_NAME || process.env.SMTP_FROM || "BONDOO";
+  return email ? { Email: email, Name: name } : null;
+};
+
+const sendWithMailjet = async ({ to, subject, htmlContent }: { to: string | string[]; subject: string; htmlContent: string }) => {
+  const apiKey = process.env.MAILJET_API_KEY;
+  const apiSecret = process.env.MAILJET_API_SECRET;
+  const from = getMailjetFrom();
+  const recipients = buildRecipientList(to);
+
+  if (!apiKey || !apiSecret || !from || recipients.length === 0) {
+    throw new Error("Mailjet credentials or sender/recipients missing");
+  }
+
+  const payload = {
+    Messages: [
+      {
+        From: from,
+        To: recipients,
+        Subject: subject,
+        HTMLPart: htmlContent,
+      },
+    ],
+  };
+
+  const response = await axios.post("https://api.mailjet.com/v3.1/send", payload, {
+    auth: { username: apiKey, password: apiSecret },
+  });
+
+  const messageId = response.data?.Messages?.[0]?.To?.[0]?.MessageID ?? null;
+  return { success: true as const, messageId };
+};
+
+const sendEmail = async ({ to, subject, htmlContent, attachments = [] }: {
+  to: string | string[];
+  subject: string;
+  htmlContent: string;
+  attachments?: unknown[];
+}): Promise<SendEmailResult> => {
+  try {
+    if (!to) throw new Error("Recipient email address is required");
+    if (!subject) throw new Error("Email subject is required");
+    if (!htmlContent) throw new Error("Email content is required");
+
+    if (attachments && attachments.length > 0 && process.env.MAILJET_API_KEY) {
+      console.warn("Mailjet API selected; attachments are ignored unless explicitly mapped.");
+    }
+
+    if (process.env.MAILJET_API_KEY && process.env.MAILJET_API_SECRET) {
+      const result = await sendWithMailjet({ to, subject, htmlContent });
+      console.log(`Email sent via Mailjet to ${Array.isArray(to) ? to.join(", ") : to}`);
+      return result;
+    }
+
+    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+      console.warn("SMTP not configured. Email not sent:", { to, subject });
+      return { success: false, error: "SMTP credentials not configured" };
+    }
+
+    const transporter = createTransporter();
+    const message = {
+      from: `"${process.env.SMTP_FROM || "BONDOO"}" <${process.env.SMTP_USER}>`,
+      to: Array.isArray(to) ? to.join(", ") : to,
+      subject,
+      html: htmlContent,
+      attachments: Array.isArray(attachments) ? (attachments as any[]) : [],
+    };
+
+    const info = await transporter.sendMail(message) as any;
+
+    console.log(`Email sent: ${info.messageId} to ${to}`);
+    return { success: true, messageId: info.messageId };
+  } catch (error: any) {
+    console.error("Email sending failed:", error.message);
+    return { success: false, error: error.message ?? "Email sending failed" };
+  }
+};
+
 export async function sendEmailOtp(params: {
   userId: string;
   toEmail: string;
   toName?: string;
 }) {
-  if (!config.mailjetApiKey || !config.mailjetApiSecret) {
-    throw new Error("Mailjet is not configured");
-  }
-
   const code = randomInt(1000, 10000).toString();
-  const auth = Buffer.from(`${config.mailjetApiKey}:${config.mailjetApiSecret}`).toString("base64");
-  const response = await fetch("https://api.mailjet.com/v3.1/send", {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${auth}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      Messages: [
-        {
-          From: {
-            Email: config.mailjetFromEmail,
-            Name: config.mailjetFromName,
-          },
-          To: [
-            {
-              Email: params.toEmail,
-              Name: params.toName ?? params.toEmail,
-            },
-          ],
-          Subject: "Your BONDOO verification code",
-          TextPart: `Your BONDOO verification code is ${code}. It expires in 10 minutes.`,
-          HTMLPart: `<p>Your BONDOO verification code is <strong>${code}</strong>.</p><p>It expires in 10 minutes.</p>`,
-        },
-      ],
-    }),
+  const htmlContent = `<p>Your BONDOO verification code is <strong>${code}</strong>.</p><p>It expires in 10 minutes.</p>`;
+  const result = await sendEmail({
+    to: params.toEmail,
+    subject: "Your BONDOO verification code",
+    htmlContent,
   });
 
-  const rawBody = await response.text();
-  let body: any = null;
-  try {
-    body = rawBody ? JSON.parse(rawBody) : null;
-  } catch {
-    body = null;
-  }
-
-  if (!response.ok) {
-    console.error("Mailjet HTTP send failed", {
-      status: response.status,
-      body: rawBody.slice(0, 1200),
-    });
-    throw new Error(`Mailjet send failed: ${response.status}`);
-  }
-
-  const message = body?.Messages?.[0];
-  const status = message?.Status;
-  const to = message?.To?.[0];
-  const messageId = to?.MessageID ?? to?.MessageUUID ?? null;
-  if (status !== "success") {
-    console.error("Mailjet rejected OTP email", {
-      status,
-      errors: message?.Errors ?? null,
-      toStatus: to?.MessageHref ? "has-message-href" : null,
-    });
-    throw new Error("Mailjet did not accept the OTP email");
+  if (!result.success) {
+    throw new Error(result.error ?? "Email sending failed");
   }
 
   otpStore.set(otpKey(params.userId, params.toEmail), {
@@ -93,12 +150,12 @@ export async function sendEmailOtp(params: {
   });
 
   console.log("Mailjet OTP email accepted", {
-    status,
-    messageId,
+    status: "success",
+    messageId: result.messageId,
     toDomain: params.toEmail.split("@")[1]?.toLowerCase() ?? "unknown",
   });
 
-  return { status, messageId };
+  return { status: "success", messageId: result.messageId };
 }
 
 export function verifyEmailOtp(params: {
