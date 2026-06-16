@@ -71,12 +71,12 @@ meRouter.get("/wallets", async (req, res) => {
 });
 
 meRouter.post("/otp/email/send", async (req, res) => {
-  await sendEmailOtp({
+  const mailjet = await sendEmailOtp({
     userId: req.userId!,
     toEmail: req.user!.email,
     toName: req.user!.displayName,
   });
-  res.json({ ok: true });
+  res.json({ ok: true, provider: "mailjet", mailjet });
 });
 
 meRouter.post("/otp/email/verify", async (req, res) => {
