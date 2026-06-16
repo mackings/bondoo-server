@@ -10,6 +10,7 @@ type OtpRecord = {
 const otpStore = new Map<string, OtpRecord>();
 const otpTtlMs = 10 * 60 * 1000;
 const maxAttempts = 5;
+const mailjetBaseUrl = "https://api.mailjet.com";
 
 function hashOtp(code: string) {
   return createHash("sha256").update(code).digest("hex");
@@ -17,6 +18,39 @@ function hashOtp(code: string) {
 
 function otpKey(userId: string, destination: string) {
   return `${userId}:${destination.toLowerCase()}`;
+}
+
+function mailjetAuthHeader() {
+  return `Basic ${Buffer.from(`${config.mailjetApiKey}:${config.mailjetApiSecret}`).toString("base64")}`;
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function verifyMailjetMessage(messageUuid: string) {
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    if (attempt > 1) await wait(2000);
+    const response = await fetch(`${mailjetBaseUrl}/v3/REST/message?Limit=100&Sort=ArrivedAt+DESC`, {
+      headers: { Authorization: mailjetAuthHeader() },
+    });
+    const body = await response.json().catch(() => null) as any;
+    if (!response.ok) {
+      console.error("Mailjet message lookup failed", {
+        status: response.status,
+        body,
+      });
+      continue;
+    }
+    const message = (body?.Data ?? []).find((row: any) => row.UUID === messageUuid);
+    if (message) {
+      return {
+        status: message.Status,
+        arrivedAt: message.ArrivedAt,
+      };
+    }
+  }
+  throw new Error("Mailjet accepted the OTP email but did not record it in message history");
 }
 
 export async function sendEmailOtp(params: {
@@ -29,11 +63,10 @@ export async function sendEmailOtp(params: {
   }
 
   const code = randomInt(1000, 10000).toString();
-  const auth = Buffer.from(`${config.mailjetApiKey}:${config.mailjetApiSecret}`).toString("base64");
-  const response = await fetch("https://api.mailjet.com/v3.1/send", {
+  const response = await fetch(`${mailjetBaseUrl}/v3.1/send`, {
     method: "POST",
     headers: {
-      Authorization: `Basic ${auth}`,
+      Authorization: mailjetAuthHeader(),
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -76,7 +109,8 @@ export async function sendEmailOtp(params: {
   const message = body?.Messages?.[0];
   const status = message?.Status;
   const to = message?.To?.[0];
-  const messageId = to?.MessageID ?? to?.MessageUUID ?? null;
+  const messageUuid = to?.MessageUUID ?? null;
+  const messageHref = to?.MessageHref ?? null;
   if (status !== "success") {
     console.error("Mailjet rejected OTP email", {
       status,
@@ -85,6 +119,11 @@ export async function sendEmailOtp(params: {
     });
     throw new Error("Mailjet did not accept the OTP email");
   }
+  if (!messageUuid) {
+    throw new Error("Mailjet accepted the OTP email without a message UUID");
+  }
+
+  const delivery = await verifyMailjetMessage(messageUuid);
 
   otpStore.set(otpKey(params.userId, params.toEmail), {
     codeHash: hashOtp(code),
@@ -94,11 +133,13 @@ export async function sendEmailOtp(params: {
 
   console.log("Mailjet OTP email accepted", {
     status,
-    messageId,
+    messageUuid,
+    messageHref,
+    delivery,
     toDomain: params.toEmail.split("@")[1]?.toLowerCase() ?? "unknown",
   });
 
-  return { status, messageId };
+  return { status, messageUuid, messageHref, delivery };
 }
 
 export function verifyEmailOtp(params: {
