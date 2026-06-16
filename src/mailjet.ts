@@ -7,17 +7,10 @@ type OtpRecord = {
   attempts: number;
 };
 
-type MailjetDelivery = {
-  id: number | null;
-  status: string | null;
-  arrivedAt: string | null;
-};
-
 const otpStore = new Map<string, OtpRecord>();
 const otpTtlMs = 10 * 60 * 1000;
 const maxAttempts = 5;
 const mailjetBaseUrl = "https://api.mailjet.com";
-const failedDeliveryStatuses = new Set(["blocked", "bounced", "hardbounced", "softbounced", "spam", "unsub"]);
 
 function hashOtp(code: string) {
   return createHash("sha256").update(code).digest("hex");
@@ -29,50 +22,6 @@ function otpKey(userId: string, destination: string) {
 
 function mailjetAuthHeader() {
   return `Basic ${Buffer.from(`${config.mailjetApiKey}:${config.mailjetApiSecret}`).toString("base64")}`;
-}
-
-function wait(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function readMailjetMessage(url: string) {
-  const response = await fetch(url, {
-    headers: { Authorization: mailjetAuthHeader() },
-  });
-  const body = await response.json().catch(() => null) as any;
-  if (!response.ok) {
-    console.error("Mailjet message lookup failed", {
-      status: response.status,
-      body,
-    });
-    return null;
-  }
-  return body;
-}
-
-function deliveryFromRow(row: any): MailjetDelivery {
-  return {
-    id: typeof row?.ID === "number" ? row.ID : null,
-    status: row?.Status ?? null,
-    arrivedAt: row?.ArrivedAt ?? null,
-  };
-}
-
-async function verifyMailjetMessage(messageUuid: string, messageHref: string | null) {
-  if (messageHref) {
-    const body = await readMailjetMessage(messageHref);
-    const row = Array.isArray(body?.Data) ? body.Data[0] : body?.Data ?? body;
-    if (row?.ID || row?.Status || row?.ArrivedAt) return deliveryFromRow(row);
-  }
-
-  for (let attempt = 1; attempt <= 5; attempt += 1) {
-    if (attempt > 1) await wait(2000);
-    const body = await readMailjetMessage(`${mailjetBaseUrl}/v3/REST/message?Limit=1000&Sort=ArrivedAt%20DESC`);
-    if (!body) continue;
-    const message = (body?.Data ?? []).find((row: any) => row.UUID === messageUuid);
-    if (message) return deliveryFromRow(message);
-  }
-  return null;
 }
 
 export async function sendEmailOtp(params: {
@@ -131,7 +80,7 @@ export async function sendEmailOtp(params: {
   const message = body?.Messages?.[0];
   const status = message?.Status;
   const to = message?.To?.[0];
-  const messageUuid = to?.MessageUUID ?? null;
+  const messageId = to?.MessageID ?? to?.MessageUUID ?? null;
   const messageHref = to?.MessageHref ?? null;
   if (status !== "success") {
     console.error("Mailjet rejected OTP email", {
@@ -140,26 +89,6 @@ export async function sendEmailOtp(params: {
       toStatus: to?.MessageHref ? "has-message-href" : null,
     });
     throw new Error("Mailjet did not accept the OTP email");
-  }
-  if (!messageUuid) {
-    throw new Error("Mailjet accepted the OTP email without a message UUID");
-  }
-
-  const delivery = await verifyMailjetMessage(messageUuid, messageHref);
-  if (!delivery) {
-    console.warn("Mailjet accepted OTP email but message history lookup did not find it yet", {
-      messageUuid,
-      messageHref,
-      toDomain: params.toEmail.split("@")[1]?.toLowerCase() ?? "unknown",
-    });
-  } else if (delivery.status && failedDeliveryStatuses.has(delivery.status.toLowerCase())) {
-    console.error("Mailjet OTP email delivery failed", {
-      messageUuid,
-      messageHref,
-      delivery,
-      toDomain: params.toEmail.split("@")[1]?.toLowerCase() ?? "unknown",
-    });
-    throw new Error(`Mailjet delivery failed: ${delivery.status}`);
   }
 
   otpStore.set(otpKey(params.userId, params.toEmail), {
@@ -170,13 +99,12 @@ export async function sendEmailOtp(params: {
 
   console.log("Mailjet OTP email accepted", {
     status,
-    messageUuid,
+    messageId,
     messageHref,
-    delivery,
     toDomain: params.toEmail.split("@")[1]?.toLowerCase() ?? "unknown",
   });
 
-  return { status, messageUuid, messageHref, delivery };
+  return { status, messageId, messageHref };
 }
 
 export function verifyEmailOtp(params: {
