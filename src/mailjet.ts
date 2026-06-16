@@ -87,7 +87,7 @@ const sendWithMailjet = async ({ to, subject, textContent, htmlContent }: {
   return { success: true as const, messageId };
 };
 
-const sendEmail = async ({ to, subject, textContent, htmlContent, attachments = [] }: {
+export const sendEmail = async ({ to, subject, textContent, htmlContent, attachments = [] }: {
   to: string | string[];
   subject: string;
   textContent?: string;

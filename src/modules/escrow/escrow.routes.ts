@@ -1,12 +1,14 @@
 import { Router } from "express";
 import { z } from "zod";
 import { config } from "../../config.js";
+import { sendEmail } from "../../mailjet.js";
 import { requireAuth } from "../../middleware/auth.js";
 import { EscrowEventModel, EscrowModel } from "../../models/escrow.js";
 import { escrowJson } from "../../models/serializers.js";
 import { UserModel } from "../../models/user.js";
 import { WalletAddressModel } from "../../models/wallet-address.js";
 import { quoteFees } from "../fees/fee.service.js";
+import { bybitClient } from "../treasury/bybit/bybit.client.js";
 
 export const escrowRouter = Router();
 
@@ -107,6 +109,53 @@ escrowRouter.post("/:id/receiver-wallet", async (req, res) => {
     eventType: "receiver_wallet_submitted",
     metadata: { network: body.network },
   });
+
+  res.json(escrowJson(escrow));
+});
+
+escrowRouter.post("/:id/confirm-payment", async (req, res) => {
+  const escrow = await EscrowModel.findById(req.params.id);
+  if (!escrow) return res.status(404).json({ error: "Escrow not found" });
+  if (String(escrow.senderUserId) !== req.userId && req.user!.role !== "admin") {
+    return res.status(403).json({ error: "Only the seller can confirm payment" });
+  }
+  if (escrow.status !== "payout_pending") return res.status(400).json({ error: `Escrow is ${escrow.status}` });
+  if (!escrow.receiverWalletAddress) return res.status(400).json({ error: "Receiver wallet missing" });
+  if (escrow.payoutAmount <= 0) return res.status(400).json({ error: "Payout amount is zero" });
+
+  await EscrowEventModel.create({
+    escrowTransactionId: escrow._id,
+    actorUserId: req.user!._id,
+    eventType: "seller_payment_confirmed",
+    metadata: {},
+  });
+
+  const withdrawal = await bybitClient.withdraw({
+    coin: escrow.coin,
+    chain: escrow.receiverWalletNetwork ?? escrow.network,
+    address: escrow.receiverWalletAddress,
+    amount: String(escrow.payoutAmount),
+  });
+  escrow.withdrawalId = withdrawal.id;
+  escrow.status = "paid_out";
+  escrow.paidOutAt = new Date();
+  await escrow.save();
+  await EscrowEventModel.create({
+    escrowTransactionId: escrow._id,
+    actorUserId: req.user!._id,
+    eventType: "payout_released",
+    metadata: { withdrawal_id: withdrawal.id, dry_run: withdrawal.dryRun },
+  });
+
+  const buyer = await UserModel.findById(escrow.receiverUserId);
+  if (buyer?.email) {
+    await sendEmail({
+      to: buyer.email,
+      subject: "BONDOO escrow payout released",
+      textContent: `Your ${escrow.payoutAmount} ${escrow.coin} escrow payout has been released to your wallet.`,
+      htmlContent: `<p>Your <strong>${escrow.payoutAmount} ${escrow.coin}</strong> escrow payout has been released to your wallet.</p>`,
+    });
+  }
 
   res.json(escrowJson(escrow));
 });

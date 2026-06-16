@@ -5,6 +5,8 @@ import morgan from "morgan";
 import { ZodError } from "zod";
 import { config } from "./config.js";
 import { connectMongo } from "./db/mongoose.js";
+import { adminEscrowRouter } from "./modules/admin/admin-escrow.routes.js";
+import { escrowRouter } from "./modules/escrow/escrow.routes.js";
 import { adminRouter } from "./routes/admin.js";
 import { authRouter } from "./routes/auth.js";
 import { chatRouter } from "./routes/chat.js";
@@ -27,7 +29,9 @@ app.use("/me", meRouter);
 app.use("/chat", chatRouter);
 app.use("/offers", offersRouter);
 app.use("/rates", ratesRouter);
+app.use("/escrow", escrowRouter);
 app.use("/admin", adminRouter);
+app.use("/admin/escrow", adminEscrowRouter);
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   if (err instanceof ZodError) return res.status(422).json({ error: "Validation failed", issues: err.issues });

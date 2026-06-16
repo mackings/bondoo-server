@@ -1,8 +1,10 @@
 import { Router } from "express";
 import { z } from "zod";
+import { sendEmail } from "../../mailjet.js";
 import { requireAdmin, requireAuth } from "../../middleware/auth.js";
 import { EscrowEventModel, EscrowModel } from "../../models/escrow.js";
 import { escrowJson } from "../../models/serializers.js";
+import { UserModel } from "../../models/user.js";
 import { bybitClient } from "../treasury/bybit/bybit.client.js";
 
 export const adminEscrowRouter = Router();
@@ -18,6 +20,7 @@ adminEscrowRouter.post("/:id/mark-funded", async (req, res) => {
   const body = z.object({ deposit_txid: z.string().min(4) }).parse(req.body);
   const escrow = await EscrowModel.findById(req.params.id);
   if (!escrow) return res.status(404).json({ error: "Escrow not found" });
+  if (!["awaiting_deposit", "deposit_seen"].includes(escrow.status)) return res.status(400).json({ error: `Escrow is ${escrow.status}` });
   escrow.depositTxid = body.deposit_txid;
   escrow.status = "awaiting_receiver_wallet";
   escrow.fundedAt = new Date();
@@ -28,6 +31,15 @@ adminEscrowRouter.post("/:id/mark-funded", async (req, res) => {
     eventType: "deposit_confirmed",
     metadata: { deposit_txid: body.deposit_txid },
   });
+  const buyer = await UserModel.findById(escrow.receiverUserId);
+  if (buyer?.email) {
+    await sendEmail({
+      to: buyer.email,
+      subject: "BONDOO funds are now in escrow",
+      textContent: `The seller's ${escrow.amount} ${escrow.coin} has been confirmed in BONDOO escrow. You can now pay the seller using the agreed payment method.`,
+      htmlContent: `<p>The seller's <strong>${escrow.amount} ${escrow.coin}</strong> has been confirmed in BONDOO escrow.</p><p>You can now pay the seller using the agreed payment method.</p>`,
+    });
+  }
   res.json(escrowJson(escrow));
 });
 
