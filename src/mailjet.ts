@@ -52,7 +52,12 @@ const getMailjetFrom = () => {
   return email ? { Email: email, Name: name } : null;
 };
 
-const sendWithMailjet = async ({ to, subject, htmlContent }: { to: string | string[]; subject: string; htmlContent: string }) => {
+const sendWithMailjet = async ({ to, subject, textContent, htmlContent }: {
+  to: string | string[];
+  subject: string;
+  textContent: string;
+  htmlContent: string;
+}) => {
   const apiKey = process.env.MAILJET_API_KEY;
   const apiSecret = process.env.MAILJET_API_SECRET;
   const from = getMailjetFrom();
@@ -68,6 +73,7 @@ const sendWithMailjet = async ({ to, subject, htmlContent }: { to: string | stri
         From: from,
         To: recipients,
         Subject: subject,
+        TextPart: textContent,
         HTMLPart: htmlContent,
       },
     ],
@@ -81,9 +87,10 @@ const sendWithMailjet = async ({ to, subject, htmlContent }: { to: string | stri
   return { success: true as const, messageId };
 };
 
-const sendEmail = async ({ to, subject, htmlContent, attachments = [] }: {
+const sendEmail = async ({ to, subject, textContent, htmlContent, attachments = [] }: {
   to: string | string[];
   subject: string;
+  textContent?: string;
   htmlContent: string;
   attachments?: unknown[];
 }): Promise<SendEmailResult> => {
@@ -97,7 +104,12 @@ const sendEmail = async ({ to, subject, htmlContent, attachments = [] }: {
     }
 
     if (process.env.MAILJET_API_KEY && process.env.MAILJET_API_SECRET) {
-      const result = await sendWithMailjet({ to, subject, htmlContent });
+      const result = await sendWithMailjet({
+        to,
+        subject,
+        textContent: textContent ?? htmlContent.replace(/<[^>]*>/g, " "),
+        htmlContent,
+      });
       console.log(`Email sent via Mailjet to ${Array.isArray(to) ? to.join(", ") : to}`);
       return result;
     }
@@ -132,10 +144,12 @@ export async function sendEmailOtp(params: {
   toName?: string;
 }) {
   const code = randomInt(1000, 10000).toString();
+  const textContent = `Your BONDOO verification code is ${code}. It expires in 10 minutes.`;
   const htmlContent = `<p>Your BONDOO verification code is <strong>${code}</strong>.</p><p>It expires in 10 minutes.</p>`;
   const result = await sendEmail({
     to: params.toEmail,
     subject: "Your BONDOO verification code",
+    textContent,
     htmlContent,
   });
 
