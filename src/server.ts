@@ -10,6 +10,7 @@ import { adminRouter } from "./routes/admin.js";
 import { authRouter } from "./routes/auth.js";
 import { chatRouter } from "./routes/chat.js";
 import { meRouter } from "./routes/me.js";
+import { offersRouter } from "./routes/offers.js";
 import { escrowRouter } from "./modules/escrow/escrow.routes.js";
 import { adminEscrowRouter } from "./modules/admin/admin-escrow.routes.js";
 
@@ -26,6 +27,7 @@ app.get("/config", (_req, res) => res.json({ bank_btc_address: config.bankBtcAdd
 app.use("/auth", authRouter);
 app.use("/me", meRouter);
 app.use("/chat", chatRouter);
+app.use("/offers", offersRouter);
 app.use("/escrow", escrowRouter);
 app.use("/admin", adminRouter);
 app.use("/admin/escrow", adminEscrowRouter);

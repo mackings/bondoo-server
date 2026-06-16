@@ -15,11 +15,13 @@ export type MessageDoc = {
   _id: mongoose.Types.ObjectId;
   conversationId: mongoose.Types.ObjectId;
   senderId: mongoose.Types.ObjectId;
-  kind: "text" | "transfer";
+  kind: "text" | "transfer" | "offer";
   body?: string;
   transferAsset?: string;
   transferAmount?: number;
   transferNote?: string;
+  offerId?: mongoose.Types.ObjectId;
+  offerSnapshot?: Record<string, unknown>;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -39,11 +41,13 @@ const messageSchema = new Schema<MessageDoc>(
   {
     conversationId: { type: Schema.Types.ObjectId, ref: "Conversation", required: true, index: true },
     senderId: { type: Schema.Types.ObjectId, ref: "User", required: true },
-    kind: { type: String, enum: ["text", "transfer"], default: "text" },
+    kind: { type: String, enum: ["text", "transfer", "offer"], default: "text" },
     body: String,
     transferAsset: String,
     transferAmount: Number,
     transferNote: String,
+    offerId: { type: Schema.Types.ObjectId, ref: "Offer" },
+    offerSnapshot: Schema.Types.Mixed,
   },
   { timestamps: true },
 );

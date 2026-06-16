@@ -3,7 +3,8 @@ import { Router } from "express";
 import { z } from "zod";
 import { requireAuth } from "../middleware/auth.js";
 import { ConversationModel, MessageModel } from "../models/chat.js";
-import { messageJson, userPublic } from "../models/serializers.js";
+import { OfferModel } from "../models/offer.js";
+import { messageJson, offerJson, userPublic } from "../models/serializers.js";
 import { UserModel } from "../models/user.js";
 import { WalletModel } from "../models/wallet.js";
 
@@ -123,4 +124,35 @@ chatRouter.post("/users/open-direct", async (req, res) => {
     });
   }
   res.json({ conversation_id: String(conversation._id) });
+});
+
+chatRouter.post("/offers/:id/open", async (req, res) => {
+  const offer = await OfferModel.findById(req.params.id).populate("userId");
+  if (!offer || offer.status !== "active") return res.status(404).json({ error: "Offer not found" });
+  if (String(offer.userId._id) === req.userId) return res.status(400).json({ error: "You cannot start a trade with your own offer" });
+
+  let conversation = await ConversationModel.findOne({
+    isGroup: false,
+    memberIds: { $all: [req.user!._id, offer.userId._id], $size: 2 },
+  });
+  if (!conversation) {
+    conversation = await ConversationModel.create({
+      isGroup: false,
+      memberIds: [req.user!._id, offer.userId._id],
+      createdBy: req.user!._id,
+    });
+  }
+
+  const snapshot = offerJson(offer);
+  const message = await MessageModel.create({
+    conversationId: conversation._id,
+    senderId: req.user!._id,
+    kind: "offer",
+    offerId: offer._id,
+    offerSnapshot: snapshot,
+    body: `I want to trade this ${offer.coin} offer.`,
+  });
+  conversation.lastMessageAt = new Date();
+  await conversation.save();
+  res.status(201).json({ conversation_id: String(conversation._id), message: messageJson(message) });
 });

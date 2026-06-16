@@ -40,7 +40,29 @@ export function messageJson(message: any) {
     transfer_asset: message.transferAsset ?? null,
     transfer_amount: message.transferAmount ?? null,
     transfer_note: message.transferNote ?? null,
+    offer_id: message.offerId ? id(message.offerId) : null,
+    offer: message.offerSnapshot ?? null,
     created_at: message.createdAt,
+  };
+}
+
+export function offerJson(offer: any) {
+  return {
+    id: id(offer._id),
+    user_id: id(offer.userId?._id ?? offer.userId),
+    user: offer.userId?.email ? userPublic(offer.userId) : null,
+    side: offer.side,
+    coin: offer.coin,
+    fiat_currency: offer.fiatCurrency,
+    crypto_amount: offer.cryptoAmount,
+    rate: offer.rate,
+    min_fiat_amount: offer.minFiatAmount,
+    max_fiat_amount: offer.maxFiatAmount,
+    payment_method: offer.paymentMethod,
+    terms: offer.terms ?? "",
+    status: offer.status,
+    created_at: offer.createdAt,
+    updated_at: offer.updatedAt,
   };
 }
 
