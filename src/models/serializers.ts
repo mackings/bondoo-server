@@ -48,6 +48,8 @@ export function messageJson(message: any) {
     sender_id: id(message.senderId),
     kind: message.kind,
     body: message.body ?? null,
+    voice_data_url: message.voiceDataUrl ?? null,
+    voice_duration_ms: message.voiceDurationMs ?? null,
     transfer_asset: message.transferAsset ?? null,
     transfer_amount: message.transferAmount ?? null,
     transfer_note: message.transferNote ?? null,

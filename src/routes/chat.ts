@@ -60,6 +60,25 @@ chatRouter.post("/conversations/:id/messages", async (req, res) => {
   res.status(201).json(messageJson(message));
 });
 
+chatRouter.post("/conversations/:id/voice-notes", async (req, res) => {
+  const body = z.object({
+    audio_data_url: z.string().startsWith("data:audio/").max(1_400_000),
+    duration_ms: z.number().int().positive().max(120_000),
+  }).parse(req.body);
+  const conversation = await ConversationModel.findById(req.params.id);
+  if (!conversation || !conversation.memberIds.some((id) => String(id) === req.userId)) return res.status(404).json({ error: "Conversation not found" });
+  const message = await MessageModel.create({
+    conversationId: conversation._id,
+    senderId: req.user!._id,
+    kind: "voice",
+    voiceDataUrl: body.audio_data_url,
+    voiceDurationMs: body.duration_ms,
+  });
+  conversation.lastMessageAt = new Date();
+  await conversation.save();
+  res.status(201).json(messageJson(message));
+});
+
 chatRouter.post("/conversations/:id/transfers", async (req, res) => {
   const body = z.object({
     recipient_id: z.string(),
