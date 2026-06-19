@@ -36,4 +36,7 @@ export const config = {
   bybitApiSecret: process.env.BYBIT_API_SECRET,
   bybitBaseUrl: process.env.BYBIT_BASE_URL ?? (process.env.BYBIT_TESTNET === "true" ? "https://api-testnet.bybit.com" : "https://api.bybit.com"),
   bybitDryRun: process.env.BYBIT_DRY_RUN !== "false",
+  agoraAppId: process.env.AGORA_APP_ID ?? "d454d5abab694b20ae57c6a5b4953e0a",
+  agoraAppCertificate: process.env.AGORA_APP_CERTIFICATE,
+  agoraTokenTtlSeconds: Number(process.env.AGORA_TOKEN_TTL_SECONDS ?? 3600),
 };

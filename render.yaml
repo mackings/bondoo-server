@@ -37,3 +37,9 @@ services:
         value: "false"
       - key: BYBIT_DRY_RUN
         value: "true"
+      - key: AGORA_APP_ID
+        value: d454d5abab694b20ae57c6a5b4953e0a
+      - key: AGORA_APP_CERTIFICATE
+        sync: false
+      - key: AGORA_TOKEN_TTL_SECONDS
+        value: "3600"
