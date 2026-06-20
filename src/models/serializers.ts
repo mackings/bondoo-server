@@ -50,6 +50,7 @@ export function messageJson(message: any) {
     body: message.body ?? null,
     voice_data_url: message.voiceDataUrl ?? null,
     voice_duration_ms: message.voiceDurationMs ?? null,
+    image_data_url: message.imageDataUrl ?? null,
     transfer_asset: message.transferAsset ?? null,
     transfer_amount: message.transferAmount ?? null,
     transfer_note: message.transferNote ?? null,

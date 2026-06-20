@@ -15,10 +15,11 @@ export type MessageDoc = {
   _id: mongoose.Types.ObjectId;
   conversationId: mongoose.Types.ObjectId;
   senderId: mongoose.Types.ObjectId;
-  kind: "text" | "transfer" | "offer" | "voice";
+  kind: "text" | "transfer" | "offer" | "voice" | "image";
   body?: string;
   voiceDataUrl?: string;
   voiceDurationMs?: number;
+  imageDataUrl?: string;
   transferAsset?: string;
   transferAmount?: number;
   transferNote?: string;
@@ -43,10 +44,11 @@ const messageSchema = new Schema<MessageDoc>(
   {
     conversationId: { type: Schema.Types.ObjectId, ref: "Conversation", required: true, index: true },
     senderId: { type: Schema.Types.ObjectId, ref: "User", required: true },
-    kind: { type: String, enum: ["text", "transfer", "offer", "voice"], default: "text" },
+    kind: { type: String, enum: ["text", "transfer", "offer", "voice", "image"], default: "text" },
     body: String,
     voiceDataUrl: String,
     voiceDurationMs: Number,
+    imageDataUrl: String,
     transferAsset: String,
     transferAmount: Number,
     transferNote: String,

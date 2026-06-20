@@ -79,6 +79,23 @@ chatRouter.post("/conversations/:id/voice-notes", async (req, res) => {
   res.status(201).json(messageJson(message));
 });
 
+chatRouter.post("/conversations/:id/images", async (req, res) => {
+  const body = z.object({
+    image_data_url: z.string().startsWith("data:image/").max(4_000_000),
+  }).parse(req.body);
+  const conversation = await ConversationModel.findById(req.params.id);
+  if (!conversation || !conversation.memberIds.some((id) => String(id) === req.userId)) return res.status(404).json({ error: "Conversation not found" });
+  const message = await MessageModel.create({
+    conversationId: conversation._id,
+    senderId: req.user!._id,
+    kind: "image",
+    imageDataUrl: body.image_data_url,
+  });
+  conversation.lastMessageAt = new Date();
+  await conversation.save();
+  res.status(201).json(messageJson(message));
+});
+
 chatRouter.post("/conversations/:id/transfers", async (req, res) => {
   const body = z.object({
     recipient_id: z.string(),
