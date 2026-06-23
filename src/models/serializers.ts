@@ -56,6 +56,10 @@ export function messageJson(message: any) {
     transfer_note: message.transferNote ?? null,
     offer_id: message.offerId ? id(message.offerId) : null,
     offer: message.offerSnapshot ?? null,
+    read_by: (message.readReceipts ?? []).map((receipt: any) => ({
+      user_id: id(receipt.userId),
+      read_at: receipt.readAt,
+    })),
     created_at: message.createdAt,
   };
 }

@@ -3,6 +3,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { requireAuth } from "../middleware/auth.js";
 import { ConversationModel, MessageModel } from "../models/chat.js";
+import { notifyUserPushOnly } from "../notifications.js";
 import { OfferModel } from "../models/offer.js";
 import { messageJson, offerJson, userPublic } from "../models/serializers.js";
 import { UserModel } from "../models/user.js";
@@ -12,18 +13,61 @@ export const chatRouter = Router();
 
 chatRouter.use(requireAuth);
 
-function convJson(conv: any, messages: any[] = []) {
+async function convJson(conv: any, currentUserId: string, messages: any[] = []) {
   return {
     id: String(conv._id),
     is_group: conv.isGroup,
     name: conv.name ?? null,
     last_message_at: conv.lastMessageAt,
+    unread_count: await unreadCount(conv._id, currentUserId),
     conversation_members: conv.memberIds.map((member: any) => ({
       user_id: String(member._id ?? member),
       profiles: member.email ? userPublic(member) : null,
     })),
     messages: messages.map(messageJson),
   };
+}
+
+function messagePreview(message: any) {
+  switch (message.kind) {
+    case "image":
+      return "sent a photo";
+    case "voice":
+      return "sent a voice note";
+    case "transfer":
+      return `sent ${message.transferAmount ?? ""} ${message.transferAsset ?? ""}`.trim();
+    case "offer":
+      return "shared an offer";
+    default:
+      return `${message.body ?? "sent a message"}`.trim() || "sent a message";
+  }
+}
+
+async function unreadCount(conversationId: any, currentUserId: string) {
+  return MessageModel.countDocuments({
+    conversationId,
+    senderId: { $ne: currentUserId },
+    "readReceipts.userId": { $ne: currentUserId },
+  });
+}
+
+async function notifyConversationRecipients(conversation: any, message: any, sender: any) {
+  const populated = await conversation.populate("memberIds");
+  const recipients = populated.memberIds.filter((member: any) => String(member._id) !== String(sender._id));
+  await Promise.allSettled(
+    recipients.map((user: any) =>
+      notifyUserPushOnly({
+        user,
+        title: `New message from ${sender.displayName ?? sender.username ?? "BONDOO"}`,
+        body: messagePreview(message),
+        data: {
+          type: "chat_message",
+          conversation_id: String(conversation._id),
+          message_id: String(message._id),
+        },
+      }),
+    ),
+  );
 }
 
 chatRouter.get("/conversations", async (req, res) => {
@@ -33,7 +77,7 @@ chatRouter.get("/conversations", async (req, res) => {
   const rows = [];
   for (const conversation of conversations) {
     const latest = await MessageModel.find({ conversationId: conversation._id }).sort({ createdAt: -1 }).limit(1);
-    rows.push(convJson(conversation, latest));
+    rows.push(await convJson(conversation, req.userId!, latest));
   }
   res.json(rows);
 });
@@ -43,6 +87,28 @@ chatRouter.get("/conversations/:id/messages", async (req, res) => {
   if (!conversation || !conversation.memberIds.some((id) => String(id) === req.userId)) return res.status(404).json({ error: "Conversation not found" });
   const messages = await MessageModel.find({ conversationId: conversation._id }).sort({ createdAt: 1 });
   res.json(messages.map(messageJson));
+});
+
+chatRouter.post("/conversations/:id/read", async (req, res) => {
+  const conversation = await ConversationModel.findById(req.params.id);
+  if (!conversation || !conversation.memberIds.some((id) => String(id) === req.userId)) return res.status(404).json({ error: "Conversation not found" });
+  const now = new Date();
+  await MessageModel.updateMany(
+    {
+      conversationId: conversation._id,
+      senderId: { $ne: req.user!._id },
+      "readReceipts.userId": { $ne: req.user!._id },
+    },
+    {
+      $push: {
+        readReceipts: {
+          userId: req.user!._id,
+          readAt: now,
+        },
+      },
+    },
+  );
+  res.json({ ok: true });
 });
 
 chatRouter.post("/conversations/:id/messages", async (req, res) => {
@@ -57,6 +123,7 @@ chatRouter.post("/conversations/:id/messages", async (req, res) => {
   });
   conversation.lastMessageAt = new Date();
   await conversation.save();
+  await notifyConversationRecipients(conversation, message, req.user!);
   res.status(201).json(messageJson(message));
 });
 
@@ -76,6 +143,7 @@ chatRouter.post("/conversations/:id/voice-notes", async (req, res) => {
   });
   conversation.lastMessageAt = new Date();
   await conversation.save();
+  await notifyConversationRecipients(conversation, message, req.user!);
   res.status(201).json(messageJson(message));
 });
 
@@ -93,6 +161,7 @@ chatRouter.post("/conversations/:id/images", async (req, res) => {
   });
   conversation.lastMessageAt = new Date();
   await conversation.save();
+  await notifyConversationRecipients(conversation, message, req.user!);
   res.status(201).json(messageJson(message));
 });
 
@@ -131,6 +200,7 @@ chatRouter.post("/conversations/:id/transfers", async (req, res) => {
     await conversation.save({ session });
   });
   await session.endSession();
+  if (message) await notifyConversationRecipients(conversation, (message as any)[0], req.user!);
 
   res.status(201).json({ id: String((message as any)[0]._id) });
 });
@@ -191,5 +261,6 @@ chatRouter.post("/offers/:id/open", async (req, res) => {
   });
   conversation.lastMessageAt = new Date();
   await conversation.save();
+  await notifyConversationRecipients(conversation, message, req.user!);
   res.status(201).json({ conversation_id: String(conversation._id), message: messageJson(message) });
 });

@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { requireAuth } from "../middleware/auth.js";
 import { sendEmailOtp, verifyEmailOtp } from "../mailjet.js";
+import { PushTokenModel } from "../models/push-token.js";
 import { userPublic, walletJson } from "../models/serializers.js";
 import { WalletModel } from "../models/wallet.js";
 
@@ -21,6 +22,19 @@ meRouter.patch("/profile", async (req, res) => {
 
   if (body.display_name) req.user!.displayName = body.display_name;
   if (body.username) req.user!.username = body.username;
+  await req.user!.save();
+  res.json(userPublic(req.user!));
+});
+
+meRouter.post("/profile/avatar", async (req, res) => {
+  const body = z.object({
+    image_data_url: z
+      .string()
+      .startsWith("data:image/")
+      .max(900_000),
+  }).parse(req.body);
+
+  req.user!.avatarUrl = body.image_data_url;
   await req.user!.save();
   res.json(userPublic(req.user!));
 });
@@ -70,13 +84,33 @@ meRouter.get("/wallets", async (req, res) => {
   res.json(wallets.map(walletJson));
 });
 
+meRouter.post("/push-token", async (req, res) => {
+  const body = z.object({
+    token: z.string().min(20).max(4096),
+    platform: z.enum(["android", "ios", "web", "unknown"]).default("unknown"),
+  }).parse(req.body);
+
+  await PushTokenModel.findOneAndUpdate(
+    { token: body.token },
+    {
+      userId: req.user!._id,
+      token: body.token,
+      platform: body.platform,
+      lastSeenAt: new Date(),
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
+
+  res.json({ ok: true });
+});
+
 meRouter.post("/otp/email/send", async (req, res) => {
-  const mailjet = await sendEmailOtp({
+  const email = await sendEmailOtp({
     userId: req.userId!,
     toEmail: req.user!.email,
     toName: req.user!.displayName,
   });
-  res.json({ ok: true, provider: "mailjet", mailjet });
+  res.json({ ok: true, provider: "smtp", email });
 });
 
 meRouter.post("/otp/email/verify", async (req, res) => {

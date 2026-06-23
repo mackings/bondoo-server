@@ -25,6 +25,10 @@ export type MessageDoc = {
   transferNote?: string;
   offerId?: mongoose.Types.ObjectId;
   offerSnapshot?: Record<string, unknown>;
+  readReceipts: Array<{
+    userId: mongoose.Types.ObjectId;
+    readAt: Date;
+  }>;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -54,6 +58,15 @@ const messageSchema = new Schema<MessageDoc>(
     transferNote: String,
     offerId: { type: Schema.Types.ObjectId, ref: "Offer" },
     offerSnapshot: Schema.Types.Mixed,
+    readReceipts: {
+      type: [
+        {
+          userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
+          readAt: { type: Date, required: true },
+        },
+      ],
+      default: [],
+    },
   },
   { timestamps: true },
 );
