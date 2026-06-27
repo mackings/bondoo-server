@@ -2,6 +2,7 @@ services:
   - type: web
     name: bondoo-api
     runtime: node
+    region: frankfurt
     repo: https://github.com/mackings/bondoo-server
     branch: main
     autoDeploy: true
@@ -21,21 +22,27 @@ services:
         sync: false
       - key: ESCROW_DEPOSIT_ADDRESS
         sync: false
-      - key: MAILJET_API_KEY
+      - key: EMAIL_HOST
         sync: false
-      - key: MAILJET_API_SECRET
+      - key: EMAIL_PORT
         sync: false
-      - key: MAILJET_FROM_EMAIL
+      - key: EMAIL_USER
         sync: false
-      - key: MAILJET_FROM_NAME
-        value: BONDOO
+      - key: EMAIL_PASSWORD
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: EMAIL_FROM_NAME
+        value: BondooApp
       - key: BYBIT_API_KEY
         sync: false
       - key: BYBIT_API_SECRET
         sync: false
+      - key: BYBIT_TESTNET_API_KEY
+        sync: false
+      - key: BYBIT_TESTNET_API_SECRET
+        sync: false
       - key: BYBIT_TESTNET
-        value: "false"
-      - key: BYBIT_DRY_RUN
         value: "true"
       - key: AGORA_APP_ID
         value: d454d5abab694b20ae57c6a5b4953e0a
