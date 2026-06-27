@@ -3,11 +3,14 @@ import express from "express";
 import helmetModule from "helmet";
 import type { HelmetOptions } from "helmet";
 import morgan from "morgan";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { ZodError } from "zod";
 import { config } from "./config.js";
 import { connectMongo } from "./db/mongoose.js";
 import { adminEscrowRouter } from "./modules/admin/admin-escrow.routes.js";
 import { escrowRouter } from "./modules/escrow/escrow.routes.js";
+import { tradesRouter } from "./modules/trades/trades.routes.js";
 import { adminRouter } from "./routes/admin.js";
 import { authRouter } from "./routes/auth.js";
 import { callsRouter } from "./routes/calls.js";
@@ -16,18 +19,26 @@ import { meRouter } from "./routes/me.js";
 import { offersRouter } from "./routes/offers.js";
 import { ratesRouter } from "./routes/rates.js";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 const app = express();
 const helmet = ((helmetModule as unknown as { default?: unknown }).default ?? helmetModule) as (
   options?: HelmetOptions,
 ) => express.RequestHandler;
 
-app.use(helmet());
+app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 app.use(cors({ origin: config.corsOrigin === "*" ? true : config.corsOrigin }));
 app.use(express.json({ limit: "5mb" }));
 app.use(morgan("dev"));
+app.use("/uploads", express.static(path.resolve(__dirname, "../uploads")));
 
 app.get("/health", (_req, res) => res.json({ ok: true, service: "bondoo-api" }));
 app.get("/config", (_req, res) => res.json({ bank_btc_address: config.bankBtcAddress }));
+app.get("/server-ip", async (_req, res) => {
+  const r = await fetch("https://api.ipify.org?format=json");
+  const j = await r.json() as { ip: string };
+  res.json({ outbound_ip: j.ip });
+});
 
 app.use(async (_req, _res, next) => {
   try {
@@ -45,6 +56,7 @@ app.use("/chat", chatRouter);
 app.use("/offers", offersRouter);
 app.use("/rates", ratesRouter);
 app.use("/escrow", escrowRouter);
+app.use("/trades", tradesRouter);
 app.use("/admin", adminRouter);
 app.use("/admin/escrow", adminEscrowRouter);
 
