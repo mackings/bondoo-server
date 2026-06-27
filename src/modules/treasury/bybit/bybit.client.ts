@@ -96,7 +96,9 @@ export class BybitClient {
       { headers: this.headers(timestamp, signature) },
     );
 
-    const json = await response.json() as any;
+    const rawText = await response.text();
+    console.log(`[Bybit] getDepositAddress raw response (status=${response.status}): ${rawText.slice(0, 500)}`);
+    const json = JSON.parse(rawText) as any;
 
     if (!response.ok || json.retCode !== 0) {
       throw new Error(
