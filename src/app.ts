@@ -39,6 +39,12 @@ app.get("/server-ip", async (_req, res) => {
   const data = await r.json();
   res.json(data);
 });
+app.get("/bybit-proxy-ip", async (_req, res) => {
+  // Returns the IP Bybit sees when Render calls through the Cloudflare Worker
+  const r = await fetch("https://bybit-proxy.bondoo.workers.dev/worker-ip");
+  const data = await r.json();
+  res.json(data);
+});
 
 app.use(async (_req, _res, next) => {
   try {
