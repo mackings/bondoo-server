@@ -34,6 +34,11 @@ app.use("/uploads", express.static(path.resolve(__dirname, "../uploads")));
 
 app.get("/health", (_req, res) => res.json({ ok: true, service: "bondoo-api" }));
 app.get("/config", (_req, res) => res.json({ bank_btc_address: config.bankBtcAddress }));
+app.get("/server-ip", async (_req, res) => {
+  const r = await fetch("https://api.ipify.org?format=json");
+  const data = await r.json();
+  res.json(data);
+});
 
 app.use(async (_req, _res, next) => {
   try {

@@ -63,7 +63,7 @@ adminEscrowRouter.post("/:id/release", async (req, res) => {
     escrowTransactionId: escrow._id,
     actorUserId: req.user!._id,
     eventType: "payout_released",
-    metadata: { withdrawal_id: withdrawal.id, dry_run: withdrawal.dryRun },
+    metadata: { withdrawal_id: withdrawal.id },
   });
   res.json(escrowJson(escrow));
 });

@@ -34,12 +34,17 @@ const upload = multer({
   },
 });
 
+// After populate(), buyerUserId/sellerUserId are full documents — use ._id explicitly
+function docId(field: any): string {
+  return String(field?._id ?? field);
+}
+
 function tradeJson(trade: any, includeUsers = false) {
   return {
     id: String(trade._id),
     offer_id: String(trade.offerId),
-    buyer_user_id: String(trade.buyerUserId),
-    seller_user_id: String(trade.sellerUserId),
+    buyer_user_id: docId(trade.buyerUserId),
+    seller_user_id: docId(trade.sellerUserId),
     buyer: includeUsers && trade.buyerUserId?.username ? {
       id: String(trade.buyerUserId._id),
       username: trade.buyerUserId.username,
@@ -216,7 +221,7 @@ tradesRouter.post("/:id/check-deposit", async (req, res) => {
 
   const deposit = await bybitClient.findDeposit({
     coin: trade.coin,
-    chainType: trade.network,
+    depositAddress: trade.depositAddress,
     minAmount: trade.cryptoAmount,
     afterTimestamp: trade.createdAt.getTime(),
   });
