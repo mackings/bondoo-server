@@ -4,8 +4,6 @@ import express from "express";
 import helmetModule from "helmet";
 import type { HelmetOptions } from "helmet";
 import morgan from "morgan";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { ZodError } from "zod";
 import { config } from "./config.js";
 import { connectMongo } from "./db/mongoose.js";
@@ -21,8 +19,6 @@ import { meRouter } from "./routes/me.js";
 import { offersRouter } from "./routes/offers.js";
 import { ratesRouter } from "./routes/rates.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
 const app = express();
 const helmet = ((helmetModule as unknown as { default?: unknown }).default ?? helmetModule) as (
   options?: HelmetOptions,
@@ -32,7 +28,6 @@ app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 app.use(cors({ origin: config.corsOrigin === "*" ? true : config.corsOrigin }));
 app.use(express.json({ limit: "5mb" }));
 app.use(morgan("dev"));
-app.use("/uploads", express.static(path.resolve(__dirname, "../uploads")));
 
 app.get("/health", (_req, res) => res.json({ ok: true, service: "bondoo-api" }));
 app.get("/config", (_req, res) => res.json({ bank_btc_address: config.bankBtcAddress }));

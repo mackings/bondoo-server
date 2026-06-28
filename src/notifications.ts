@@ -139,7 +139,9 @@ async function sendFcmV1(params: {
 }
 
 function notificationChannelId(data: Record<string, string>) {
-  return data.type === "incoming_call" ? "incoming_calls" : "chat_messages";
+  if (data.type === "incoming_call") return "incoming_calls";
+  if (data.type === "trade") return "trade_updates";
+  return "chat_messages";
 }
 
 async function getFcmAccessToken(serviceAccount: any) {
