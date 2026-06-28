@@ -2,7 +2,8 @@ import { Router } from "express";
 import multer from "multer";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { put } from "@vercel/blob";
+import { fileURLToPath } from "node:url";
+import { mkdirSync } from "node:fs";
 import { z } from "zod";
 import { requireAuth } from "../../middleware/auth.js";
 import { TradeModel } from "../../models/trade.js";
@@ -18,10 +19,20 @@ import { notifyUser } from "../../notifications.js";
 export const tradesRouter = Router();
 tradesRouter.use(requireAuth);
 
-// Store file in memory — then push to Vercel Blob (no disk dependency)
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const uploadsDir = path.resolve(__dirname, "../../../uploads/receipts");
+mkdirSync(uploadsDir, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadsDir),
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase() || ".jpg";
+    cb(null, `${randomUUID()}${ext}`);
+  },
+});
 const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 },
 });
 
 // After populate(), buyerUserId/sellerUserId are full documents — use ._id explicitly
@@ -278,13 +289,7 @@ tradesRouter.post("/:id/payment-sent", upload.single("receipt"), async (req, res
     note: z.string().max(500).optional(),
   }).parse(req.body);
 
-  // Upload receipt to Vercel Blob — persistent, publicly accessible URL
-  const ext = path.extname(req.file.originalname).toLowerCase() || ".jpg";
-  const blob = await put(`receipts/${randomUUID()}${ext}`, req.file.buffer, {
-    access: "public",
-    contentType: req.file.mimetype || "image/jpeg",
-  });
-  const receiptUrl = blob.url;
+  const receiptUrl = `/uploads/receipts/${req.file.filename}`;
 
   trade.paymentReceiptUrl = receiptUrl;
   trade.paymentNote = body.note;
