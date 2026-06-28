@@ -10,7 +10,7 @@
   "functions": {
     "api/index.js": {
       "maxDuration": 30,
-      "includeFiles": "dist/**,node_modules/tiny-secp256k1/lib/*.wasm"
+      "includeFiles": "dist/**,node_modules/tiny-secp256k1/**"
     }
   }
 }

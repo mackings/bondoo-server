@@ -10,8 +10,6 @@
  * BTC                                          — bitcoinjs-lib PSBT signing
  */
 
-import * as bitcoin from "bitcoinjs-lib";
-import * as ecc from "tiny-secp256k1";
 import { ethers } from "ethers";
 import { secp256k1 as noble_secp256k1 } from "@noble/curves/secp256k1.js";
 import { sha256 } from "@noble/hashes/sha2.js";
@@ -21,7 +19,26 @@ import { HDKey } from "@scure/bip32";
 import { mnemonicToSeedSync } from "@scure/bip39";
 import { config } from "../../../config.js";
 
-bitcoin.initEccLib(ecc);
+// bitcoinjs-lib and tiny-secp256k1 (WASM) are loaded lazily on first BTC payout
+// to avoid blocking server startup if the WASM file is not yet warm.
+let _bitcoin: typeof import("bitcoinjs-lib") | null = null;
+let _ecc: typeof import("tiny-secp256k1") | null = null;
+async function getBitcoin() {
+  if (!_bitcoin) {
+    const [bitcoin, ecc] = await Promise.all([
+      import("bitcoinjs-lib"),
+      import("tiny-secp256k1"),
+    ]);
+    bitcoin.initEccLib(ecc as any);
+    _bitcoin = bitcoin;
+    _ecc = ecc;
+  }
+  return _bitcoin!;
+}
+async function getEcc() {
+  if (!_ecc) await getBitcoin();
+  return _ecc!;
+}
 
 const bs58check = base58check(sha256);
 
@@ -329,6 +346,8 @@ async function payoutBTC(params: {
   toAddress: string;
   payoutAmount: number;
 }): Promise<{ txid: string }> {
+  const bitcoin = await getBitcoin();
+  const ecc = await getEcc();
   const testnet = config.bybitTestnet;
   const network = testnet ? bitcoin.networks.testnet : bitcoin.networks.bitcoin;
   const base = testnet ? "https://blockstream.info/testnet/api" : "https://blockstream.info/api";
