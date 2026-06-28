@@ -21,6 +21,10 @@ tradesRouter.use(requireAuth);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadsDir = path.resolve(__dirname, "../../../uploads/receipts");
 
+// Ensure the uploads directory exists (Render ephemeral filesystem needs this on every start)
+import { mkdirSync } from "node:fs";
+mkdirSync(uploadsDir, { recursive: true });
+
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, uploadsDir),
   filename: (_req, file, cb) => {
