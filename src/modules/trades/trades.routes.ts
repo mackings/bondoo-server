@@ -183,11 +183,18 @@ tradesRouter.post("/", async (req, res) => {
     status:            "awaiting_escrow",
   });
 
-  // Notify seller: please deposit crypto to escrow (fire-and-forget — don't block response)
+  // Notify both parties — fire-and-forget, don't block response
   notifyUser({
     user: seller,
     title: "New trade — deposit crypto to escrow",
     body: `${buyer.username ?? "A buyer"} wants to buy ${cryptoAmount.toFixed(8)} ${offer.coin}. Send exactly ${escrowAmount.toFixed(8)} ${offer.coin} to your escrow address (includes ~${fees.networkFee.toFixed(8)} network fee).`,
+    data: { type: "trade", trade_id: String(trade._id), status: "awaiting_escrow" },
+  }).catch(console.error);
+
+  notifyUser({
+    user: buyer,
+    title: "Trade started — waiting for seller",
+    body: `Your trade for ${cryptoAmount.toFixed(8)} ${offer.coin} has been created. The seller has been notified to deposit crypto into escrow.`,
     data: { type: "trade", trade_id: String(trade._id), status: "awaiting_escrow" },
   }).catch(console.error);
 
@@ -307,6 +314,13 @@ tradesRouter.post("/:id/payment-sent", upload.single("receipt"), async (req, res
     data: { type: "trade", trade_id: String(trade._id), status: "payment_sent" },
   }).catch(console.error);
 
+  notifyUser({
+    user: buyer,
+    title: "Receipt uploaded — awaiting release",
+    body: `Your payment receipt has been submitted. The seller has been notified to verify and release ${trade.cryptoAmount.toFixed(8)} ${trade.coin} to your wallet.`,
+    data: { type: "trade", trade_id: String(trade._id), status: "payment_sent" },
+  }).catch(console.error);
+
   res.json(tradeJson(trade, true));
 });
 
@@ -412,14 +426,21 @@ tradesRouter.post("/:id/cancel", async (req, res) => {
   trade.cancelledAt = new Date();
   await trade.save();
 
-  const otherParty = String(trade.buyerUserId._id ?? trade.buyerUserId) === req.userId
-    ? trade.sellerUserId as any
-    : trade.buyerUserId as any;
+  const cancellerIsbuyer = String(trade.buyerUserId._id ?? trade.buyerUserId) === req.userId;
+  const canceller  = cancellerIsbuyer ? trade.buyerUserId  as any : trade.sellerUserId as any;
+  const otherParty = cancellerIsbuyer ? trade.sellerUserId as any : trade.buyerUserId  as any;
 
   notifyUser({
     user: otherParty,
     title: "Trade cancelled",
-    body: `The trade for ${trade.cryptoAmount.toFixed(8)} ${trade.coin} has been cancelled.`,
+    body: `The trade for ${trade.cryptoAmount.toFixed(8)} ${trade.coin} has been cancelled by the other party.`,
+    data: { type: "trade", trade_id: String(trade._id), status: "cancelled" },
+  }).catch(console.error);
+
+  notifyUser({
+    user: canceller,
+    title: "Trade cancelled",
+    body: `You have cancelled the trade for ${trade.cryptoAmount.toFixed(8)} ${trade.coin}. The other party has been notified.`,
     data: { type: "trade", trade_id: String(trade._id), status: "cancelled" },
   }).catch(console.error);
 
@@ -449,14 +470,21 @@ tradesRouter.post("/:id/dispute", async (req, res) => {
   trade.status = "disputed";
   await trade.save();
 
-  const otherParty = String(trade.buyerUserId._id ?? trade.buyerUserId) === req.userId
-    ? trade.sellerUserId as any
-    : trade.buyerUserId as any;
+  const disputerIsBuyer = String(trade.buyerUserId._id ?? trade.buyerUserId) === req.userId;
+  const disputer   = disputerIsBuyer ? trade.buyerUserId  as any : trade.sellerUserId as any;
+  const otherParty = disputerIsBuyer ? trade.sellerUserId as any : trade.buyerUserId  as any;
 
   notifyUser({
     user: otherParty,
-    title: "Trade dispute raised",
-    body: `A dispute has been raised on your ${trade.coin} trade. Reason: ${body.reason}. Our team will review.`,
+    title: "Trade dispute raised against you",
+    body: `A dispute has been raised on your ${trade.coin} trade. Reason: ${body.reason}. Our team will review and contact both parties.`,
+    data: { type: "trade", trade_id: String(trade._id), status: "disputed" },
+  }).catch(console.error);
+
+  notifyUser({
+    user: disputer,
+    title: "Dispute submitted",
+    body: `Your dispute for the ${trade.coin} trade has been submitted. Our team will review it and contact you shortly.`,
     data: { type: "trade", trade_id: String(trade._id), status: "disputed" },
   }).catch(console.error);
 
