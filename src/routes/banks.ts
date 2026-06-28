@@ -1,5 +1,4 @@
 import { Router } from "express";
-import { config } from "../config.js";
 
 export const banksRouter = Router();
 
@@ -109,11 +108,10 @@ banksRouter.get("/", (_req, res) => {
 });
 
 // ── GET /banks/verify?account_number=&bank_code= ─────────────────────────────
-// Resolves the account holder name for a given account number + bank code.
-// Uses Paystack's free resolve endpoint when PAYSTACK_SECRET_KEY is configured.
-// No key → returns 503 with a clear message.
+// Validates the format of an account number (NUBAN = 10 digits for NGN).
+// Account holder name is entered manually by the user — no third-party API needed.
 
-banksRouter.get("/verify", async (req, res) => {
+banksRouter.get("/verify", (req, res) => {
   const accountNumber = (req.query.account_number as string ?? "").trim();
   const bankCode = (req.query.bank_code as string ?? "").trim();
 
@@ -121,36 +119,9 @@ banksRouter.get("/verify", async (req, res) => {
     return res.status(400).json({ error: "account_number and bank_code are required" });
   }
 
-  const paystackKey = config.paystackSecretKey;
-  if (!paystackKey) {
-    return res.status(503).json({
-      error: "Bank verification is not configured on this server. Add PAYSTACK_SECRET_KEY to enable it.",
-    });
+  if (!/^\d{6,}$/.test(accountNumber)) {
+    return res.status(422).json({ error: "Account number must be numeric (minimum 6 digits)" });
   }
 
-  try {
-    const url = `https://api.paystack.co/bank/resolve?account_number=${encodeURIComponent(accountNumber)}&bank_code=${encodeURIComponent(bankCode)}`;
-    const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${paystackKey}` },
-    });
-
-    const data = await response.json() as {
-      status: boolean;
-      message: string;
-      data?: { account_name: string; account_number: string };
-    };
-
-    if (!data.status || !data.data) {
-      return res.status(422).json({ error: data.message ?? "Could not verify account" });
-    }
-
-    res.json({
-      account_name:   data.data.account_name,
-      account_number: data.data.account_number,
-      bank_code:      bankCode,
-    });
-  } catch (err: any) {
-    console.error("[Banks] verify error:", err.message);
-    res.status(502).json({ error: "Bank verification service unavailable. Try again." });
-  }
+  res.json({ valid: true, account_number: accountNumber, bank_code: bankCode });
 });
