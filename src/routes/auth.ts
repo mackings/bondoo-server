@@ -61,14 +61,18 @@ authRouter.post("/signup", async (req, res) => {
 
 authRouter.post("/signin", async (req, res) => {
   const body = z.object({
-    email: z.string().email().transform((v) => v.toLowerCase()),
+    email:    z.string().email().transform((v) => v.toLowerCase()).optional(),
+    username: z.string().min(1).optional(),
     password: z.string().min(1),
-  }).parse(req.body);
+  }).refine((d) => d.email || d.username, "email or username is required").parse(req.body);
 
-  const user = await UserModel.findOne({ email: body.email });
-  if (!user) return res.status(401).json({ error: "Invalid email or password" });
+  const user = body.email
+    ? await UserModel.findOne({ email: body.email })
+    : await UserModel.findOne({ username: body.username });
+
+  if (!user) return res.status(401).json({ error: "Invalid credentials" });
   const ok = await bcrypt.compare(body.password, user.passwordHash);
-  if (!ok) return res.status(401).json({ error: "Invalid email or password" });
+  if (!ok) return res.status(401).json({ error: "Invalid credentials" });
 
   res.json({ token: signToken(user), user: userPublic(user) });
 });

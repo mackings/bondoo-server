@@ -1,3 +1,4 @@
+import "express-async-errors"; // patches Express 4 to forward async errors to next(err)
 import cors from "cors";
 import express from "express";
 import helmetModule from "helmet";

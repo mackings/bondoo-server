@@ -45,15 +45,26 @@ async function findEVMDeposit(params: {
   let apiKey: string;
 
   if (params.chain === "eth") {
-    explorerBase = testnet
-      ? "https://api-sepolia.etherscan.io/api"
-      : "https://api.etherscan.io/api";
-    apiKey = config.etherscanApiKey ?? "";
+    if (testnet) {
+      // Blockscout Sepolia — Etherscan-compatible API, no API key required, no rate limits
+      explorerBase = "https://eth-sepolia.blockscout.com/api";
+      apiKey = "";
+    } else {
+      explorerBase = config.etherscanApiKey
+        ? "https://api.etherscan.io/api"
+        : "https://eth.blockscout.com/api"; // fallback: Blockscout mainnet, no key
+      apiKey = config.etherscanApiKey ?? "";
+    }
   } else {
-    explorerBase = testnet
-      ? "https://api-testnet.bscscan.com/api"
-      : "https://api.bscscan.com/api";
-    apiKey = config.bscscanApiKey ?? "";
+    if (testnet) {
+      explorerBase = "https://bsc-testnet.blockscout.com/api"; // Blockscout BSC testnet
+      apiKey = "";
+    } else {
+      explorerBase = config.bscscanApiKey
+        ? "https://api.bscscan.com/api"
+        : "https://bsc.blockscout.com/api"; // fallback: Blockscout BSC mainnet
+      apiKey = config.bscscanApiKey ?? "";
+    }
   }
 
   // ── Token transfer detection ─────────────────────────────────────────────
