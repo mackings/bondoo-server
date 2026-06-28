@@ -71,7 +71,7 @@ export async function quoteFees(coin: string, network: string, amount: number): 
   const c    = coin.toUpperCase();
 
   const feeDoc = await FeeModel.findOne({ coin: c, network: net, active: true });
-  const percentage = Number(feeDoc?.get("percentageFee") ?? 0.02);
+  const percentage = Number(feeDoc?.get("percentageFee") ?? 0.01); // must match seedDefaultFees
   const fixed      = Number(feeDoc?.get("fixedFee") ?? 0);
   const minimum    = Number(feeDoc?.get("minFee") ?? 0);
 
