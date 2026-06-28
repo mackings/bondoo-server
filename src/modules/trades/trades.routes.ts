@@ -329,8 +329,13 @@ tradesRouter.post("/:id/release", async (req, res) => {
   if (!trade.buyerWalletAddress) {
     return res.status(400).json({ error: "Buyer wallet address is missing" });
   }
-  if (trade.payoutAmount <= 0) {
-    return res.status(400).json({ error: "Payout amount is zero" });
+  // Fallback for trades created before payoutAmount was stored: deduct 1% platform fee
+  const effectivePayout = trade.payoutAmount > 0
+    ? trade.payoutAmount
+    : trade.cryptoAmount * 0.99;
+
+  if (effectivePayout <= 0) {
+    return res.status(400).json({ error: "Cannot release: crypto amount is zero" });
   }
 
   trade.status = "releasing";
@@ -343,7 +348,7 @@ tradesRouter.post("/:id/release", async (req, res) => {
       network: trade.buyerWalletNetwork ?? trade.network,
       depositIndex: trade.depositIndex,
       toAddress: trade.buyerWalletAddress,
-      payoutAmount: trade.payoutAmount,
+      payoutAmount: effectivePayout,
     });
     withdrawalTxid = payout.txid;
   } catch (err: any) {
@@ -364,13 +369,13 @@ tradesRouter.post("/:id/release", async (req, res) => {
   notifyUser({
     user: buyer,
     title: "Crypto released to your wallet!",
-    body: `${trade.payoutAmount.toFixed(8)} ${trade.coin} has been sent to your wallet. Trade complete.`,
+    body: `${effectivePayout.toFixed(8)} ${trade.coin} has been sent to your wallet. Trade complete.`,
     data: { type: "trade", trade_id: String(trade._id), status: "completed" },
   }).catch(console.error);
   notifyUser({
     user: seller,
     title: "Trade completed",
-    body: `You have successfully released ${trade.payoutAmount.toFixed(8)} ${trade.coin} to the buyer. Trade is complete.`,
+    body: `You have successfully released ${effectivePayout.toFixed(8)} ${trade.coin} to the buyer. Trade is complete.`,
     data: { type: "trade", trade_id: String(trade._id), status: "completed" },
   }).catch(console.error);
 
