@@ -329,10 +329,16 @@ tradesRouter.post("/:id/release", async (req, res) => {
   if (!trade.buyerWalletAddress) {
     return res.status(400).json({ error: "Buyer wallet address is missing" });
   }
-  // Fallback for trades created before payoutAmount was stored: re-quote from fee service
+  // Fallback for legacy trades: re-derive cryptoAmount from fiat/rate if stored as 0
+  let effectiveCrypto = trade.cryptoAmount;
+  if (effectiveCrypto <= 0 && trade.fiatAmount > 0 && trade.rate > 0) {
+    effectiveCrypto = trade.fiatAmount / trade.rate;
+    console.log(`[Release] cryptoAmount was 0 — re-derived from fiat: ${trade.fiatAmount} / ${trade.rate} = ${effectiveCrypto}`);
+  }
+
   let effectivePayout = trade.payoutAmount;
   if (effectivePayout <= 0) {
-    const fees = await quoteFees(trade.coin, trade.network, trade.cryptoAmount);
+    const fees = await quoteFees(trade.coin, trade.network, effectiveCrypto);
     effectivePayout = fees.payoutAmount;
   }
 
