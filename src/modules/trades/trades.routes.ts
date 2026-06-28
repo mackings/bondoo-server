@@ -329,10 +329,12 @@ tradesRouter.post("/:id/release", async (req, res) => {
   if (!trade.buyerWalletAddress) {
     return res.status(400).json({ error: "Buyer wallet address is missing" });
   }
-  // Fallback for trades created before payoutAmount was stored: deduct 1% platform fee
-  const effectivePayout = trade.payoutAmount > 0
-    ? trade.payoutAmount
-    : trade.cryptoAmount * 0.99;
+  // Fallback for trades created before payoutAmount was stored: re-quote from fee service
+  let effectivePayout = trade.payoutAmount;
+  if (effectivePayout <= 0) {
+    const fees = await quoteFees(trade.coin, trade.network, trade.cryptoAmount);
+    effectivePayout = fees.payoutAmount;
+  }
 
   if (effectivePayout <= 0) {
     return res.status(400).json({ error: "Cannot release: crypto amount is zero" });
