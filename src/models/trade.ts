@@ -24,6 +24,7 @@ export type TradeDoc = {
   paymentMethod: string;
   // Escrow deposit (seller sends crypto here)
   depositAddress: string;
+  depositIndex: number;  // HD wallet derivation index — unique per trade
   depositTxid?: string;
   depositConfirmedAt?: Date;
   // Fiat payment proof
@@ -59,6 +60,7 @@ const tradeSchema = new Schema<TradeDoc>(
     rate:          { type: Number, required: true, min: 0 },
     paymentMethod: { type: String, required: true },
     depositAddress:         { type: String, required: true },
+    depositIndex:           { type: Number, required: true },
     depositTxid:            String,
     depositConfirmedAt:     Date,
     paymentReceiptUrl:      String,

@@ -49,4 +49,10 @@ export const config = {
   agoraTokenTtlSeconds: Number(process.env.AGORA_TOKEN_TTL_SECONDS ?? 3600),
   fcmServerKey: process.env.FCM_SERVER_KEY,
   fcmServiceAccountJson: process.env.FCM_SERVICE_ACCOUNT_JSON,
+  // HD wallet — escrow deposit address derivation
+  hdWalletMnemonic: process.env.HD_WALLET_MNEMONIC ?? "",
+  // Blockchain explorer API keys (free tier works without key but is rate-limited)
+  etherscanApiKey: process.env.ETHERSCAN_API_KEY ?? "",
+  bscscanApiKey:   process.env.BSCSCAN_API_KEY ?? "",
+  tronGridApiKey:  process.env.TRONGRID_API_KEY ?? "",
 };

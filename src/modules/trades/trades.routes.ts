@@ -10,6 +10,9 @@ import { OfferModel } from "../../models/offer.js";
 import { UserModel } from "../../models/user.js";
 import { quoteFees } from "../fees/fee.service.js";
 import { bybitClient } from "../treasury/bybit/bybit.client.js";
+import { generateDepositAddress } from "../treasury/wallet/deposit-address.service.js";
+import { findBlockchainDeposit } from "../treasury/blockchain/chain-detector.js";
+import { nextDepositIndex } from "../../models/counter.js";
 import { notifyUser } from "../../notifications.js";
 
 export const tradesRouter = Router();
@@ -138,14 +141,16 @@ tradesRouter.post("/", async (req, res) => {
   const cryptoAmount = body.fiat_amount / offer.rate;
   const fees = await quoteFees(offer.coin, body.network, cryptoAmount);
 
-  // Get Bybit deposit address for this coin/network
+  // Derive a unique HD wallet address for this trade — no two trades ever share an address
   let depositAddress: string;
+  let depositIndex: number;
   try {
-    const result = await bybitClient.getDepositAddress(offer.coin, body.network);
-    depositAddress = result.address;
+    depositIndex = await nextDepositIndex();
+    depositAddress = generateDepositAddress(offer.coin, body.network, depositIndex);
+    console.log(`[Trade] deposit address for index=${depositIndex} coin=${offer.coin} net=${body.network}: ${depositAddress}`);
   } catch (err: any) {
-    console.error("Bybit getDepositAddress error:", err.message);
-    return res.status(502).json({ error: "Could not generate escrow deposit address. Please try again." });
+    console.error("[Trade] generateDepositAddress error:", err.message);
+    return res.status(500).json({ error: "Could not generate escrow deposit address. Please try again." });
   }
 
   const [seller, buyer] = await Promise.all([
@@ -166,6 +171,7 @@ tradesRouter.post("/", async (req, res) => {
     rate:              offer.rate,
     paymentMethod:     offer.paymentMethod,
     depositAddress,
+    depositIndex,
     buyerWalletAddress:  body.buyer_wallet_address,
     buyerWalletNetwork:  body.buyer_wallet_network,
     platformFee:       fees.platformFee,
@@ -219,8 +225,9 @@ tradesRouter.post("/:id/check-deposit", async (req, res) => {
     return res.status(400).json({ error: `Trade is already ${trade.status}` });
   }
 
-  const deposit = await bybitClient.findDeposit({
+  const deposit = await findBlockchainDeposit({
     coin: trade.coin,
+    network: trade.network,
     depositAddress: trade.depositAddress,
     minAmount: trade.cryptoAmount,
     afterTimestamp: trade.createdAt.getTime(),
@@ -233,7 +240,7 @@ tradesRouter.post("/:id/check-deposit", async (req, res) => {
     });
   }
 
-  trade.depositTxid = deposit.txID;
+  trade.depositTxid = deposit.txid;
   trade.depositConfirmedAt = new Date();
   trade.status = "escrowed";
   await trade.save();
