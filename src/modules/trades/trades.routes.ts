@@ -174,13 +174,13 @@ tradesRouter.post("/", async (req, res) => {
     status:            "awaiting_escrow",
   });
 
-  // Notify seller: please deposit crypto to escrow
-  await notifyUser({
+  // Notify seller: please deposit crypto to escrow (fire-and-forget — don't block response)
+  notifyUser({
     user: seller,
     title: "New trade — deposit crypto to escrow",
     body: `${buyer.username ?? "A buyer"} wants to buy ${cryptoAmount.toFixed(8)} ${offer.coin}. Send exactly ${cryptoAmount.toFixed(8)} ${offer.coin} to your escrow address to start the trade.`,
     data: { type: "trade", trade_id: String(trade._id), status: "awaiting_escrow" },
-  });
+  }).catch(console.error);
 
   await trade.populate(["buyerUserId", "sellerUserId"]);
   res.status(201).json(tradeJson(trade, true));
@@ -241,19 +241,19 @@ tradesRouter.post("/:id/check-deposit", async (req, res) => {
   const buyer = trade.buyerUserId as any;
   const seller = trade.sellerUserId as any;
 
-  await notifyUser({
+  notifyUser({
     user: buyer,
     title: "Crypto is in escrow — pay now",
     body: `${trade.cryptoAmount.toFixed(8)} ${trade.coin} is locked in escrow. Please pay ${trade.fiatAmount} ${trade.fiatCurrency} to the seller via ${trade.paymentMethod} and upload your receipt.`,
     data: { type: "trade", trade_id: String(trade._id), status: "escrowed" },
-  });
+  }).catch(console.error);
 
-  await notifyUser({
+  notifyUser({
     user: seller,
     title: "Escrow confirmed",
     body: `Your ${trade.cryptoAmount.toFixed(8)} ${trade.coin} deposit has been confirmed. Waiting for buyer's payment.`,
     data: { type: "trade", trade_id: String(trade._id), status: "escrowed" },
-  });
+  }).catch(console.error);
 
   res.json({ found: true, trade: tradeJson(trade, true) });
 });
@@ -291,12 +291,12 @@ tradesRouter.post("/:id/payment-sent", upload.single("receipt"), async (req, res
   const seller = trade.sellerUserId as any;
   const buyer = trade.buyerUserId as any;
 
-  await notifyUser({
+  notifyUser({
     user: seller,
     title: "Buyer has paid — check your bank",
     body: `${buyer.username ?? "The buyer"} has sent ${trade.fiatAmount} ${trade.fiatCurrency} via ${trade.paymentMethod}. Check your bank account and release the crypto once confirmed.`,
     data: { type: "trade", trade_id: String(trade._id), status: "payment_sent" },
-  });
+  }).catch(console.error);
 
   res.json(tradeJson(trade, true));
 });
@@ -348,20 +348,18 @@ tradesRouter.post("/:id/release", async (req, res) => {
   const buyer = trade.buyerUserId as any;
   const seller = trade.sellerUserId as any;
 
-  await Promise.allSettled([
-    notifyUser({
-      user: buyer,
-      title: "Crypto released to your wallet!",
-      body: `${trade.payoutAmount.toFixed(8)} ${trade.coin} has been sent to your wallet. Trade complete.`,
-      data: { type: "trade", trade_id: String(trade._id), status: "completed" },
-    }),
-    notifyUser({
-      user: seller,
-      title: "Trade completed",
-      body: `You have successfully released ${trade.payoutAmount.toFixed(8)} ${trade.coin} to the buyer. Trade is complete.`,
-      data: { type: "trade", trade_id: String(trade._id), status: "completed" },
-    }),
-  ]);
+  notifyUser({
+    user: buyer,
+    title: "Crypto released to your wallet!",
+    body: `${trade.payoutAmount.toFixed(8)} ${trade.coin} has been sent to your wallet. Trade complete.`,
+    data: { type: "trade", trade_id: String(trade._id), status: "completed" },
+  }).catch(console.error);
+  notifyUser({
+    user: seller,
+    title: "Trade completed",
+    body: `You have successfully released ${trade.payoutAmount.toFixed(8)} ${trade.coin} to the buyer. Trade is complete.`,
+    data: { type: "trade", trade_id: String(trade._id), status: "completed" },
+  }).catch(console.error);
 
   res.json(tradeJson(trade, true));
 });
@@ -395,12 +393,12 @@ tradesRouter.post("/:id/cancel", async (req, res) => {
     ? trade.sellerUserId as any
     : trade.buyerUserId as any;
 
-  await notifyUser({
+  notifyUser({
     user: otherParty,
     title: "Trade cancelled",
     body: `The trade for ${trade.cryptoAmount.toFixed(8)} ${trade.coin} has been cancelled.`,
     data: { type: "trade", trade_id: String(trade._id), status: "cancelled" },
-  });
+  }).catch(console.error);
 
   res.json(tradeJson(trade, true));
 });
@@ -432,12 +430,12 @@ tradesRouter.post("/:id/dispute", async (req, res) => {
     ? trade.sellerUserId as any
     : trade.buyerUserId as any;
 
-  await notifyUser({
+  notifyUser({
     user: otherParty,
     title: "Trade dispute raised",
     body: `A dispute has been raised on your ${trade.coin} trade. Reason: ${body.reason}. Our team will review.`,
     data: { type: "trade", trade_id: String(trade._id), status: "disputed" },
-  });
+  }).catch(console.error);
 
   res.json({ trade: tradeJson(trade, true), reason: body.reason });
 });
