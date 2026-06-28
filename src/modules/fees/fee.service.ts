@@ -116,13 +116,13 @@ export async function seedDefaultFees() {
     { coin: "USDT", network: "ERC20", percentageFee: 0.01, fixedFee: 0, minFee: 2 },
     { coin: "USDC", network: "ERC20", percentageFee: 0.01, fixedFee: 0, minFee: 2 },
     { coin: "BTC",  network: "BTC",   percentageFee: 0.01, fixedFee: 0, minFee: 0.00005 },
-    { coin: "ETH",  network: "ERC20", percentageFee: 0.01, fixedFee: 0, minFee: 0.001 },
+    { coin: "ETH",  network: "ERC20", percentageFee: 0.01, fixedFee: 0, minFee: 0.0002 },
     { coin: "BNB",  network: "BSC",   percentageFee: 0.01, fixedFee: 0, minFee: 0.005 },
   ];
-  for (const fee of defaults) {
+  for (const { coin, network, ...fields } of defaults) {
     await FeeModel.updateOne(
-      { coin: fee.coin, network: fee.network },
-      { $setOnInsert: fee },
+      { coin, network },
+      { $set: fields },   // always overwrite — ensures DB stays in sync with code
       { upsert: true },
     );
   }
