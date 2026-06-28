@@ -1,5 +1,17 @@
 import { createHmac, randomUUID } from "node:crypto";
+import { ProxyAgent } from "undici";
 import { config } from "../../../config.js";
+
+// Lazy singleton proxy agent — only created if BYBIT_PROXY_URL is set
+let _proxyAgent: ProxyAgent | undefined;
+
+function bybitFetch(url: string, init?: RequestInit): Promise<Response> {
+  if (config.bybitProxyUrl) {
+    _proxyAgent ??= new ProxyAgent(config.bybitProxyUrl);
+    return fetch(url, { ...(init ?? {}), dispatcher: _proxyAgent } as RequestInit);
+  }
+  return fetch(url, init);
+}
 
 type WithdrawParams = {
   coin: string;
@@ -91,7 +103,7 @@ export class BybitClient {
     const queryString = `coin=${coin}&chainType=${chainType}`;
     const signature = this.sign(timestamp, queryString);
 
-    const response = await fetch(
+    const response = await bybitFetch(
       `${config.bybitBaseUrl}/v5/asset/deposit/query-address?${queryString}`,
       { headers: this.headers(timestamp, signature) },
     );
@@ -149,7 +161,7 @@ export class BybitClient {
     const queryString = `coin=${params.coin}&startTime=${params.afterTimestamp}&limit=50`;
     const signature = this.sign(timestamp, queryString);
 
-    const response = await fetch(
+    const response = await bybitFetch(
       `${config.bybitBaseUrl}/v5/asset/deposit/query-record?${queryString}`,
       { headers: this.headers(timestamp, signature) },
     );
@@ -224,7 +236,7 @@ export class BybitClient {
       `[Bybit] withdraw: initiating ${params.amount} ${params.coin} network=${params.chain} → bybitChain=${bybitChain} to ${params.address}`,
     );
 
-    const response = await fetch(`${config.bybitBaseUrl}/v5/asset/withdraw/create`, {
+    const response = await bybitFetch(`${config.bybitBaseUrl}/v5/asset/withdraw/create`, {
       method: "POST",
       headers: this.headers(timestamp, signature),
       body,

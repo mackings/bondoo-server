@@ -42,6 +42,7 @@ export const config = {
     ? process.env.BYBIT_TESTNET_API_SECRET
     : process.env.BYBIT_API_SECRET,
   bybitBaseUrl: process.env.BYBIT_BASE_URL ?? (process.env.BYBIT_TESTNET === "true" ? "https://api-testnet.bybit.com" : "https://api.bybit.com"),
+  bybitProxyUrl: process.env.BYBIT_PROXY_URL,   // e.g. http://user:pass@host:port
   bybitDryRun: process.env.BYBIT_DRY_RUN === "true", // must be explicitly "true" to enable; default is OFF
   agoraAppId: process.env.AGORA_APP_ID ?? "d454d5abab694b20ae57c6a5b4953e0a",
   agoraAppCertificate: process.env.AGORA_APP_CERTIFICATE,
