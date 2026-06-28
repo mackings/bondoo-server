@@ -54,5 +54,7 @@ export const config = {
   // Blockchain explorer API keys (free tier works without key but is rate-limited)
   etherscanApiKey: process.env.ETHERSCAN_API_KEY ?? "",
   bscscanApiKey:   process.env.BSCSCAN_API_KEY ?? "",
-  tronGridApiKey:  process.env.TRONGRID_API_KEY ?? "",
+  tronGridApiKey:          process.env.TRONGRID_API_KEY ?? "",
+  tronUsdtTestnetContract: process.env.TRON_USDT_TESTNET_CONTRACT ?? "",
+  paystackSecretKey: process.env.PAYSTACK_SECRET_KEY ?? "",
 };
