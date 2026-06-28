@@ -100,7 +100,10 @@ export class BybitClient {
     this.assertConfigured();
 
     const timestamp = Date.now().toString();
-    const queryString = `coin=${coin}&chainType=${chainType}`;
+    // Omit chainType from the query string: Bybit testnet ignores this param and
+    // returns an empty chains array when it is present, so we fetch all chains and
+    // filter client-side.  This is also safe on mainnet.
+    const queryString = `coin=${coin}`;
     const signature = this.sign(timestamp, queryString);
 
     const response = await bybitFetch(
