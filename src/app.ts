@@ -32,7 +32,7 @@ app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 app.use(cors({ origin: config.corsOrigin === "*" ? true : config.corsOrigin }));
 app.use(express.json({ limit: "5mb" }));
 app.use(morgan("dev"));
-app.use("/uploads", express.static(path.resolve(__dirname, "../uploads")));
+app.use("/uploads", express.static("/tmp/uploads"));
 
 app.get("/health", (_req, res) => res.json({ ok: true, service: "bondoo-api" }));
 app.get("/config", (_req, res) => res.json({ bank_btc_address: config.bankBtcAddress }));

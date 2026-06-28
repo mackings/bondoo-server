@@ -2,7 +2,6 @@ import { Router } from "express";
 import multer from "multer";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { fileURLToPath } from "node:url";
 import { mkdirSync } from "node:fs";
 import { z } from "zod";
 import { requireAuth } from "../../middleware/auth.js";
@@ -19,8 +18,8 @@ import { notifyUser } from "../../notifications.js";
 export const tradesRouter = Router();
 tradesRouter.use(requireAuth);
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const uploadsDir = path.resolve(__dirname, "../../../uploads/receipts");
+// /tmp is the only writable directory on Vercel serverless
+const uploadsDir = "/tmp/uploads/receipts";
 mkdirSync(uploadsDir, { recursive: true });
 
 const storage = multer.diskStorage({
