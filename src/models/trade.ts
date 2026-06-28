@@ -38,7 +38,8 @@ export type TradeDoc = {
   // Fees
   platformFee: number;
   networkFee: number;
-  payoutAmount: number;
+  escrowAmount: number;  // exact amount seller must send to the deposit address
+  payoutAmount: number;  // exact amount buyer will receive
   // State
   status: TradeStatus;
   completedAt?: Date;
@@ -71,6 +72,7 @@ const tradeSchema = new Schema<TradeDoc>(
     withdrawalId:           String,
     platformFee:   { type: Number, default: 0 },
     networkFee:    { type: Number, default: 0 },
+    escrowAmount:  { type: Number, default: 0 },
     payoutAmount:  { type: Number, default: 0 },
     status: {
       type: String,

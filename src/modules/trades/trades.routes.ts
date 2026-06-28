@@ -9,8 +9,8 @@ import { TradeModel } from "../../models/trade.js";
 import { OfferModel } from "../../models/offer.js";
 import { UserModel } from "../../models/user.js";
 import { quoteFees } from "../fees/fee.service.js";
-import { bybitClient } from "../treasury/bybit/bybit.client.js";
 import { generateDepositAddress } from "../treasury/wallet/deposit-address.service.js";
+import { sendPayoutFromHDWallet } from "../treasury/wallet/payout.service.js";
 import { findBlockchainDeposit } from "../treasury/blockchain/chain-detector.js";
 import { nextDepositIndex } from "../../models/counter.js";
 import { notifyUser } from "../../notifications.js";
@@ -88,6 +88,7 @@ function tradeJson(trade: any, includeUsers = false) {
     withdrawal_id: trade.withdrawalId ?? null,
     platform_fee: trade.platformFee,
     network_fee: trade.networkFee,
+    escrow_amount: trade.escrowAmount ?? trade.cryptoAmount,
     payout_amount: trade.payoutAmount,
     status: trade.status,
     completed_at: trade.completedAt ?? null,
@@ -144,6 +145,9 @@ tradesRouter.post("/", async (req, res) => {
 
   const cryptoAmount = body.fiat_amount / offer.rate;
   const fees = await quoteFees(offer.coin, body.network, cryptoAmount);
+  // escrowAmount = what the seller must physically send to the deposit address
+  // For native coins it includes the gas buffer; for tokens it equals cryptoAmount
+  const escrowAmount = fees.escrowAmount;
 
   // Derive a unique HD wallet address for this trade — no two trades ever share an address
   let depositAddress: string;
@@ -180,6 +184,7 @@ tradesRouter.post("/", async (req, res) => {
     buyerWalletNetwork:  body.buyer_wallet_network,
     platformFee:       fees.platformFee,
     networkFee:        fees.networkFee,
+    escrowAmount:      escrowAmount,
     payoutAmount:      fees.payoutAmount,
     status:            "awaiting_escrow",
   });
@@ -188,7 +193,7 @@ tradesRouter.post("/", async (req, res) => {
   notifyUser({
     user: seller,
     title: "New trade — deposit crypto to escrow",
-    body: `${buyer.username ?? "A buyer"} wants to buy ${cryptoAmount.toFixed(8)} ${offer.coin}. Send exactly ${cryptoAmount.toFixed(8)} ${offer.coin} to your escrow address to start the trade.`,
+    body: `${buyer.username ?? "A buyer"} wants to buy ${cryptoAmount.toFixed(8)} ${offer.coin}. Send exactly ${escrowAmount.toFixed(8)} ${offer.coin} to your escrow address (includes ~${fees.networkFee.toFixed(8)} network fee).`,
     data: { type: "trade", trade_id: String(trade._id), status: "awaiting_escrow" },
   }).catch(console.error);
 
@@ -335,23 +340,24 @@ tradesRouter.post("/:id/release", async (req, res) => {
   trade.status = "releasing";
   await trade.save();
 
-  let withdrawalId: string;
+  let withdrawalTxid: string;
   try {
-    const withdrawal = await bybitClient.withdraw({
+    const payout = await sendPayoutFromHDWallet({
       coin: trade.coin,
-      chain: trade.buyerWalletNetwork ?? trade.network,
-      address: trade.buyerWalletAddress,
-      amount: String(trade.payoutAmount),
+      network: trade.buyerWalletNetwork ?? trade.network,
+      depositIndex: trade.depositIndex,
+      toAddress: trade.buyerWalletAddress,
+      payoutAmount: trade.payoutAmount,
     });
-    withdrawalId = withdrawal.id;
+    withdrawalTxid = payout.txid;
   } catch (err: any) {
     trade.status = "payment_sent"; // rollback
     await trade.save();
-    console.error("Bybit withdrawal error:", err.message);
-    return res.status(502).json({ error: `Withdrawal failed: ${err.message}` });
+    console.error("[Release] Payout error:", err.message);
+    return res.status(502).json({ error: `Payout failed: ${err.message}` });
   }
 
-  trade.withdrawalId = withdrawalId;
+  trade.withdrawalId = withdrawalTxid;
   trade.status = "completed";
   trade.completedAt = new Date();
   await trade.save();
