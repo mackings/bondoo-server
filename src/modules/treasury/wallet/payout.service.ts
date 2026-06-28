@@ -176,7 +176,8 @@ async function payoutEVM(params: {
     if (coin === "ETH" || coin === "BNB") {
       const feeData = await provider.getFeeData();
       const gasLimit = 21000n;
-      const gasPrice = feeData.gasPrice ?? ethers.parseUnits("5", "gwei");
+      if (!feeData.gasPrice) throw new Error(`RPC did not return a gas price for ${net}`);
+      const gasPrice = feeData.gasPrice;
       const gasCost  = gasPrice * gasLimit;
       const sendAmount = balance - gasCost;
 
@@ -356,7 +357,9 @@ async function payoutBTC(params: {
   // Fetch fee rate (sat/vbyte, 6-block target)
   const feeResp = await fetch(`${base}/fee-estimates`);
   const feeEstimates: Record<string, number> = await feeResp.json();
-  const feeRate = Math.max(Math.ceil(feeEstimates["6"] ?? 2), 1);
+  const feeRate6 = feeEstimates["6"];
+  if (!feeRate6) throw new Error("Blockstream did not return a 6-block fee estimate");
+  const feeRate = Math.ceil(feeRate6);
 
   // P2WPKH vbyte estimate: 10.5 overhead + 67.75/input + 31/output
   const vBytes = Math.ceil(10.5 + confirmed.length * 67.75 + 31);

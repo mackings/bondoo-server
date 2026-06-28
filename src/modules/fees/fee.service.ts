@@ -9,7 +9,7 @@ export type FeeQuote = {
   payoutAmount: number; // what the buyer will receive (cryptoAmount - platformFee)
 };
 
-// ─── Live gas estimation ──────────────────────────────────────────────────────
+// ─── RPC endpoints ────────────────────────────────────────────────────────────
 
 const TESTNET_RPCS: Record<string, string> = {
   ERC20: "https://ethereum-sepolia.publicnode.com",
@@ -23,89 +23,114 @@ const MAINNET_RPCS: Record<string, string> = {
   BEP20: "https://bsc-dataseed1.binance.org",
 };
 
-// Gas limits per operation type
-const GAS_LIMIT_NATIVE  = 21_000n;      // ETH / BNB transfer
-const GAS_LIMIT_ERC20   = 65_000n;      // ERC20 token transfer
-const GAS_LIMIT_BTC_SAT = 200n;         // sat/vbyte × typical 140 vbytes
-const TRX_BANDWIDTH_FEE = 0.5;          // ~0.5 TRX for a TRC20 transfer
+// Protocol constants — fixed by the Ethereum/Bitcoin spec, not business choices
+const GAS_LIMIT_NATIVE = 21_000n;   // ETH / BNB simple transfer
+const GAS_LIMIT_ERC20  = 65_000n;   // ERC20 token transfer
+
+// ─── Live gas estimation ──────────────────────────────────────────────────────
 
 async function estimateEVMGas(network: string, isToken: boolean): Promise<number> {
   const rpcs = config.bybitTestnet ? TESTNET_RPCS : MAINNET_RPCS;
   const rpcUrl = rpcs[network.toUpperCase()];
-  if (!rpcUrl) return 0;
+  if (!rpcUrl) throw new Error(`No RPC configured for EVM network "${network}"`);
 
-  try {
-    const provider = new ethers.JsonRpcProvider(rpcUrl);
-    const feeData = await provider.getFeeData();
-    const gasPrice = feeData.gasPrice ?? ethers.parseUnits("5", "gwei");
-    const gasLimit = isToken ? GAS_LIMIT_ERC20 : GAS_LIMIT_NATIVE;
-    const gasCostWei = gasPrice * gasLimit;
-    // Add 20% buffer so the estimate doesn't go stale by the time the seller sends
-    const buffered = (gasCostWei * 120n) / 100n;
-    return Number(ethers.formatEther(buffered));
-  } catch {
-    // Fallback: safe conservative estimates (won't underquote)
-    return isToken ? 0.005 : 0.0003;
-  }
+  const provider = new ethers.JsonRpcProvider(rpcUrl);
+  const feeData = await provider.getFeeData();
+  if (!feeData.gasPrice) throw new Error(`RPC did not return a gas price for ${network}`);
+
+  const gasLimit = isToken ? GAS_LIMIT_ERC20 : GAS_LIMIT_NATIVE;
+  const gasCostWei = feeData.gasPrice * gasLimit;
+  // 20% buffer so the quote stays valid by the time the seller sends
+  const buffered = (gasCostWei * 120n) / 100n;
+  return Number(ethers.formatEther(buffered));
 }
 
 async function estimateBTCFee(): Promise<number> {
   const base = config.bybitTestnet
     ? "https://blockstream.info/testnet/api"
     : "https://blockstream.info/api";
-  try {
-    const resp = await fetch(`${base}/fee-estimates`);
-    const data: Record<string, number> = await resp.json();
-    const feeRate = Math.ceil(data["6"] ?? 5); // sat/vbyte, 6-block target
-    const typicalVBytes = 140; // 1-in 1-out P2WPKH
-    return (feeRate * typicalVBytes * 120) / 1e8 / 100; // +20% buffer, sat→BTC
-  } catch {
-    return 0.00005; // conservative 5000 sat fallback
+
+  const resp = await fetch(`${base}/fee-estimates`);
+  if (!resp.ok) throw new Error(`Blockstream fee-estimates failed: HTTP ${resp.status}`);
+  const data: Record<string, number> = await resp.json();
+
+  const feeRate = data["6"];
+  if (!feeRate) throw new Error("Blockstream did not return a 6-block fee estimate");
+
+  const typicalVBytes = 140; // P2WPKH 1-in 1-out — Bitcoin script standard
+  // +20% buffer for fee market movement before seller sends
+  return Math.ceil(feeRate) * typicalVBytes * 1.2 / 1e8;
+}
+
+async function estimateTRXFee(isToken: boolean): Promise<number> {
+  const baseUrl = config.bybitTestnet
+    ? "https://nile.trongrid.io"
+    : "https://api.trongrid.io";
+
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (config.tronGridApiKey) headers["TRON-PRO-API-KEY"] = config.tronGridApiKey;
+
+  const resp = await fetch(`${baseUrl}/wallet/getchainparameters`, { headers });
+  if (!resp.ok) throw new Error(`TronGrid getchainparameters failed: HTTP ${resp.status}`);
+
+  const data = await resp.json() as { chainParameter: { key: string; value: number }[] };
+  if (!data.chainParameter) throw new Error("TronGrid returned no chain parameters");
+
+  const params = Object.fromEntries(data.chainParameter.map((p) => [p.key, p.value]));
+
+  const txFeePerByte = params["getTransactionFee"]; // SUN per byte (bandwidth)
+  const energyFeePerUnit = params["getEnergyFee"];  // SUN per energy unit
+
+  if (!txFeePerByte || !energyFeePerUnit) {
+    throw new Error("TronGrid chain parameters missing getTransactionFee or getEnergyFee");
+  }
+
+  if (isToken) {
+    // TRC20 transfer from a fresh address with no staked resources:
+    // ~350 bytes bandwidth + ~29,000 energy units (measured on-chain for USDT TRC20)
+    const bandwidthCost = 350 * txFeePerByte;
+    const energyCost    = 29_000 * energyFeePerUnit;
+    return round8((bandwidthCost + energyCost) / 1_000_000); // SUN → TRX
+  } else {
+    // Native TRX transfer: ~250 bytes bandwidth, no energy needed
+    return round8((250 * txFeePerByte) / 1_000_000);
   }
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 export async function quoteFees(coin: string, network: string, amount: number): Promise<FeeQuote> {
-  const net  = network.toUpperCase();
-  const c    = coin.toUpperCase();
+  const net = network.toUpperCase();
+  const c   = coin.toUpperCase();
 
   const feeDoc = await FeeModel.findOne({ coin: c, network: net, active: true });
-  const percentage = Number(feeDoc?.get("percentageFee") ?? 0.01); // must match seedDefaultFees
-  const fixed      = Number(feeDoc?.get("fixedFee") ?? 0);
-  const minimum    = Number(feeDoc?.get("minFee") ?? 0);
+  if (!feeDoc) {
+    throw new Error(`No fee configuration found for ${c}/${net}. Run seedDefaultFees first.`);
+  }
+
+  const percentage = Number(feeDoc.get("percentageFee"));
+  const fixed      = Number(feeDoc.get("fixedFee"));
+  const minimum    = Number(feeDoc.get("minFee"));
 
   const platformFee = round8(Math.max(amount * percentage + fixed, minimum));
 
-  // ── Network / gas fee ────────────────────────────────────────────────────
-  let networkFee = 0;
-  const isToken = c !== "ETH" && c !== "BNB" && net !== "BTC"; // USDT, USDC, etc.
+  // ── Network / gas fee (always fetched live) ──────────────────────────────
+  const isToken = c !== "ETH" && c !== "BNB" && net !== "BTC";
 
+  let networkFee: number;
   if (net === "BTC" || c === "BTC") {
-    networkFee = round8(await estimateBTCFee());
+    networkFee = await estimateBTCFee();
   } else if (net === "TRC20") {
-    // TRX for bandwidth. For USDT TRC20 this is negligible but real.
-    networkFee = TRX_BANDWIDTH_FEE;
+    networkFee = await estimateTRXFee(isToken);
   } else {
-    // ERC20, BSC, BEP20
-    networkFee = round8(await estimateEVMGas(net, isToken));
+    networkFee = await estimateEVMGas(net, isToken);
   }
 
   // ── Amounts ──────────────────────────────────────────────────────────────
-  // payoutAmount  = what the buyer receives
-  // escrowAmount  = what the seller must deposit
-  //
-  // For native coins (ETH, BNB, BTC, TRX):
-  //   seller deposits (cryptoAmount + networkFee) so after gas the buyer gets cryptoAmount - platformFee
-  //
-  // For tokens (USDT ERC20, TRC20, BEP20):
-  //   seller deposits exactly cryptoAmount in tokens — gas is paid from platform gas wallet
-  //   networkFee is shown informatively but does NOT add to what the seller sends
-
-  const payoutAmount  = round8(Math.max(amount - platformFee, 0));
-  const escrowAmount  = isToken
-    ? round8(amount)                        // token sender deposits exact amount
-    : round8(amount + networkFee);          // native coin sender must cover gas too
+  const payoutAmount = round8(Math.max(amount - platformFee, 0));
+  const escrowAmount = isToken
+    ? round8(amount)               // tokens: seller deposits exact amount; platform covers gas
+    : round8(amount + networkFee); // native coin: seller covers gas too
 
   return { platformFee, networkFee, escrowAmount, payoutAmount };
 }
@@ -122,7 +147,7 @@ export async function seedDefaultFees() {
   for (const { coin, network, ...fields } of defaults) {
     await FeeModel.updateOne(
       { coin, network },
-      { $set: fields },   // always overwrite — ensures DB stays in sync with code
+      { $set: fields },
       { upsert: true },
     );
   }
