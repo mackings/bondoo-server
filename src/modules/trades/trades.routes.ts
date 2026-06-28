@@ -35,10 +35,6 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
-  fileFilter: (_req, file, cb) => {
-    // Accept any image type (covers image/jpg, image/jpeg, image/heic, etc.) + PDF
-    cb(null, file.mimetype.startsWith("image/") || file.mimetype === "application/pdf");
-  },
 });
 
 // After populate(), buyerUserId/sellerUserId are full documents — use ._id explicitly
