@@ -30,9 +30,9 @@ const bs58check = base58check(sha256);
 const RPCS: Record<string, string[]> = {
   ERC20: config.bybitTestnet
     ? [
-        "https://1rpc.io/sepolia",
         "https://ethereum-sepolia.publicnode.com",
         "https://sepolia.drpc.org",
+        "https://rpc.sepolia.org",
       ]
     : [
         "https://eth.llamarpc.com",
