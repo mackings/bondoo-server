@@ -57,4 +57,5 @@ export const config = {
   tronGridApiKey:          process.env.TRONGRID_API_KEY ?? "",
   tronUsdtTestnetContract: process.env.TRON_USDT_TESTNET_CONTRACT ?? "",
   paystackSecretKey: process.env.PAYSTACK_SECRET_KEY ?? "",
+  cronSecret: process.env.CRON_SECRET ?? "",
 };

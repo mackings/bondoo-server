@@ -211,8 +211,11 @@ async function payoutEVM(params: {
         gasLimit,
         gasPrice,
       });
-      await tx.wait(1);
-      console.log(`[Payout] ✓ ${coin} txid: ${tx.hash}`);
+      // Do NOT await tx.wait() — once sendTransaction() resolves we have the hash
+      // and the tx is accepted by the network. Waiting for confirmation here creates
+      // an ambiguous failure window: if the wait times out the tx IS on-chain but
+      // the caller would treat it as a failure and double-refund.
+      console.log(`[Payout] ✓ ${coin} broadcast txid: ${tx.hash}`);
       return { txid: tx.hash };
     }
 
@@ -241,8 +244,9 @@ async function payoutEVM(params: {
 
     console.log(`[Payout] Sending ${params.payoutAmount} ${coin} → ${params.toAddress}`);
     const tx = await token.transfer(params.toAddress, rawAmount);
-    await tx.wait(1);
-    console.log(`[Payout] ✓ ${coin} token txid: ${tx.hash}`);
+    // Do NOT await tx.wait() — same reason as native ETH: if wait times out after
+    // broadcast, the caller would refund while the tx is already on-chain.
+    console.log(`[Payout] ✓ ${coin} token broadcast txid: ${tx.hash}`);
     return { txid: tx.hash };
   });
 }

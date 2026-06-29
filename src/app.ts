@@ -17,10 +17,13 @@ import { authRouter } from "./routes/auth.js";
 import { banksRouter } from "./routes/banks.js";
 import { callsRouter } from "./routes/calls.js";
 import { chatRouter } from "./routes/chat.js";
+import { cronRouter } from "./routes/cron.js";
 import { marketRouter } from "./routes/market.js";
 import { meRouter } from "./routes/me.js";
+import { walletRouter } from "./routes/wallet.js";
 import { offersRouter } from "./routes/offers.js";
 import { ratesRouter } from "./routes/rates.js";
+import { scanUserDeposits } from "./modules/wallet/deposit-scanner.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -62,6 +65,8 @@ app.use("/auth", authRouter);
 app.use("/banks", banksRouter);
 app.use("/market", marketRouter);
 app.use("/me", meRouter);
+app.use("/wallet", walletRouter);
+app.use("/cron", cronRouter);
 app.use("/calls", callsRouter);
 app.use("/chat", chatRouter);
 app.use("/offers", offersRouter);
@@ -76,5 +81,27 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
   console.error(err);
   res.status(500).json({ error: "Internal server error" });
 });
+
+// ── Background deposit scanner (Render persistent server only) ────────────
+// On Vercel serverless this never runs — use the /cron/scan-deposits endpoint
+// triggered via vercel.json crons instead.
+if (process.env.VERCEL !== "1") {
+  const SCAN_INTERVAL_MS = 5 * 60 * 1000; // every 5 minutes
+
+  // Delay first run 60s after startup so DB connection is stable
+  setTimeout(async () => {
+    const { connectMongo } = await import("./db/mongoose.js");
+    const run = async () => {
+      try {
+        await connectMongo();
+        await scanUserDeposits();
+      } catch (err) {
+        console.error("[DepositScanner] run error:", err);
+      }
+    };
+    run();
+    setInterval(run, SCAN_INTERVAL_MS);
+  }, 60_000);
+}
 
 export default app;

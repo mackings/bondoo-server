@@ -34,6 +34,8 @@ export type UserDoc = {
     address: string;
   }>;
   tradeStatus?: TradeStatusDoc;
+  walletIndex?: number;
+  lastWalletScan?: Date;
   emailVerified: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -82,7 +84,9 @@ const userSchema = new Schema<UserDoc>(
       active: { type: Boolean, default: false },
       updatedAt: { type: Date, default: Date.now },
     },
-    emailVerified: { type: Boolean, default: false },
+    walletIndex:    { type: Number },
+    lastWalletScan: { type: Date },
+    emailVerified:  { type: Boolean, default: false },
   },
   { timestamps: true },
 );

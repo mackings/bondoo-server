@@ -12,5 +12,11 @@
       "maxDuration": 30,
       "includeFiles": "dist/**,node_modules/tiny-secp256k1/**"
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/cron/scan-deposits",
+      "schedule": "*/5 * * * *"
+    }
+  ]
 }

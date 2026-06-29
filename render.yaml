@@ -43,10 +43,32 @@ services:
       - key: BYBIT_TESTNET_API_SECRET
         sync: false
       - key: BYBIT_TESTNET
-        value: "true"
+        value: "false"
+      - key: BYBIT_DRY_RUN
+        value: "false"
+      - key: BYBIT_PROXY_URL
+        sync: false
+      - key: HD_WALLET_MNEMONIC
+        sync: false
+      - key: ETHERSCAN_API_KEY
+        sync: false
+      - key: BSCSCAN_API_KEY
+        sync: false
+      - key: TRONGRID_API_KEY
+        sync: false
+      - key: TRON_USDT_TESTNET_CONTRACT
+        value: ""
+      - key: CRON_SECRET
+        sync: false
       - key: AGORA_APP_ID
         value: d454d5abab694b20ae57c6a5b4953e0a
       - key: AGORA_APP_CERTIFICATE
         sync: false
       - key: AGORA_TOKEN_TTL_SECONDS
         value: "3600"
+      - key: FCM_SERVER_KEY
+        sync: false
+      - key: FCM_SERVICE_ACCOUNT_JSON
+        sync: false
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
