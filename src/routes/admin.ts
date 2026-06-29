@@ -180,7 +180,7 @@ adminRouter.get("/overview", async (_req, res) => {
     system: {
       api: "ok",
       database: "ok",
-      email_configured: Boolean(config.emailUser && config.emailPassword && config.emailFrom),
+      email_configured: Boolean(config.resendApiKey),
       agora_configured: Boolean(config.agoraAppId && config.agoraAppCertificate),
       bybit_configured: Boolean(config.bybitApiKey && config.bybitApiSecret),
       bybit_dry_run: config.bybitDryRun,

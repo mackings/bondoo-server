@@ -22,18 +22,12 @@ services:
         sync: false
       - key: ESCROW_DEPOSIT_ADDRESS
         sync: false
-      - key: EMAIL_HOST
+      - key: RESEND_API_KEY
         sync: false
-      - key: EMAIL_PORT
-        sync: false
-      - key: EMAIL_USER
-        sync: false
-      - key: EMAIL_PASSWORD
-        sync: false
-      - key: EMAIL_FROM
-        sync: false
+      - key: RESEND_FROM_EMAIL
+        value: "noreply@decodeanalytical.com"
       - key: EMAIL_FROM_NAME
-        value: BondooApp
+        value: BONDOO
       - key: BYBIT_API_KEY
         sync: false
       - key: BYBIT_API_SECRET

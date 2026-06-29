@@ -1,5 +1,4 @@
 import { randomInt, createHash } from "node:crypto";
-import nodemailer from "nodemailer";
 import { config } from "./config.js";
 
 type OtpRecord = {
@@ -12,8 +11,8 @@ type SendEmailResult =
   | { success: true; messageId: string | number | null }
   | { success: false; error: string };
 
-const otpStore = new Map<string, OtpRecord>();
-const otpTtlMs = 10 * 60 * 1000;
+const otpStore    = new Map<string, OtpRecord>();
+const otpTtlMs    = 10 * 60 * 1000;
 const maxAttempts = 5;
 
 function hashOtp(code: string) {
@@ -24,54 +23,52 @@ function otpKey(userId: string, destination: string) {
   return `${userId}:${destination.toLowerCase()}`;
 }
 
-const createTransporter = () => {
-  return nodemailer.createTransport({
-    host: config.emailHost,
-    port: config.emailPort,
-    secure: config.emailPort === 465,
-    auth: {
-      user: config.emailUser,
-      pass: config.emailPassword,
-    },
-    tls: {
-      rejectUnauthorized: false,
-    },
-  });
-};
-
-export const sendEmail = async ({ to, subject, textContent, htmlContent, attachments = [] }: {
+export const sendEmail = async ({
+  to,
+  subject,
+  textContent,
+  htmlContent,
+}: {
   to: string | string[];
   subject: string;
   textContent?: string;
   htmlContent: string;
-  attachments?: unknown[];
 }): Promise<SendEmailResult> => {
   try {
-    if (!to) throw new Error("Recipient email address is required");
-    if (!subject) throw new Error("Email subject is required");
-    if (!htmlContent) throw new Error("Email content is required");
-
-    if (!config.emailUser || !config.emailPassword || !config.emailFrom) {
-      console.warn("SMTP not configured. Email not sent:", { to, subject });
-      return { success: false, error: "Email credentials not configured" };
+    if (!config.resendApiKey) {
+      console.warn("[Email] RESEND_API_KEY not set — email not sent:", { to, subject });
+      return { success: false, error: "RESEND_API_KEY not configured" };
     }
 
-    const transporter = createTransporter();
-    const message = {
-      from: `"${config.emailFromName}" <${config.emailFrom}>`,
-      to: Array.isArray(to) ? to.join(", ") : to,
+    const body = {
+      from: `${config.emailFromName} <${config.resendFrom}>`,
+      to:   Array.isArray(to) ? to : [to],
       subject,
-      text: textContent,
       html: htmlContent,
-      attachments: Array.isArray(attachments) ? (attachments as any[]) : [],
+      ...(textContent ? { text: textContent } : {}),
     };
 
-    const info = await transporter.sendMail(message) as any;
+    const res = await fetch("https://api.resend.com/emails", {
+      method:  "POST",
+      headers: {
+        "Authorization": `Bearer ${config.resendApiKey}`,
+        "Content-Type":  "application/json",
+      },
+      body: JSON.stringify(body),
+    });
 
-    console.log(`Email sent via SMTP: ${info.messageId} to ${to}`);
-    return { success: true, messageId: info.messageId };
+    const data = await res.json() as any;
+
+    if (!res.ok) {
+      const msg = data?.message ?? data?.name ?? `Resend API error ${res.status}`;
+      console.error("[Email] Resend error:", msg);
+      return { success: false, error: msg };
+    }
+
+    console.log(`[Email] Sent via Resend: ${data.id} → ${Array.isArray(to) ? to.join(", ") : to}`);
+    return { success: true, messageId: data.id };
   } catch (error: any) {
-    console.error("Email sending failed:", error.message);
+    console.error("[Email] sendEmail failed:", error.message);
     return { success: false, error: error.message ?? "Email sending failed" };
   }
 };
@@ -81,9 +78,19 @@ export async function sendEmailOtp(params: {
   toEmail: string;
   toName?: string;
 }) {
-  const code = randomInt(1000, 10000).toString();
+  const code        = randomInt(1000, 10000).toString();
   const textContent = `Your BONDOO verification code is ${code}. It expires in 10 minutes.`;
-  const htmlContent = `<p>Your BONDOO verification code is <strong>${code}</strong>.</p><p>It expires in 10 minutes.</p>`;
+  const htmlContent = `
+    <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px">
+      <h2 style="margin:0 0 8px;color:#111">Your verification code</h2>
+      <p style="color:#555;margin:0 0 24px">Use the code below to verify your BONDOO account. It expires in 10 minutes.</p>
+      <div style="background:#f4f4f5;border-radius:12px;padding:24px;text-align:center">
+        <span style="font-size:36px;font-weight:900;letter-spacing:8px;color:#111">${code}</span>
+      </div>
+      <p style="color:#999;font-size:12px;margin-top:24px">If you didn't request this, you can safely ignore this email.</p>
+    </div>
+  `;
+
   const result = await sendEmail({
     to: params.toEmail,
     subject: "Your BONDOO verification code",
@@ -91,20 +98,17 @@ export async function sendEmailOtp(params: {
     htmlContent,
   });
 
-  if (!result.success) {
-    throw new Error(result.error ?? "Email sending failed");
-  }
+  if (!result.success) throw new Error(result.error ?? "Email sending failed");
 
   otpStore.set(otpKey(params.userId, params.toEmail), {
-    codeHash: hashOtp(code),
+    codeHash:  hashOtp(code),
     expiresAt: Date.now() + otpTtlMs,
-    attempts: 0,
+    attempts:  0,
   });
 
-  console.log("SMTP OTP email accepted", {
-    status: "success",
-    messageId: result.messageId,
+  console.log("[Email] OTP sent", {
     toDomain: params.toEmail.split("@")[1]?.toLowerCase() ?? "unknown",
+    messageId: result.messageId,
   });
 
   return { status: "success", messageId: result.messageId };
@@ -115,7 +119,7 @@ export function verifyEmailOtp(params: {
   email: string;
   code: string;
 }) {
-  const key = otpKey(params.userId, params.email);
+  const key    = otpKey(params.userId, params.email);
   const record = otpStore.get(key);
   if (!record) return { ok: false, error: "No active OTP" };
   if (Date.now() > record.expiresAt) {
