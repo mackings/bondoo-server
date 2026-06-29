@@ -17,6 +17,7 @@ import { authRouter } from "./routes/auth.js";
 import { banksRouter } from "./routes/banks.js";
 import { callsRouter } from "./routes/calls.js";
 import { chatRouter } from "./routes/chat.js";
+import { marketRouter } from "./routes/market.js";
 import { meRouter } from "./routes/me.js";
 import { offersRouter } from "./routes/offers.js";
 import { ratesRouter } from "./routes/rates.js";
@@ -59,6 +60,7 @@ app.use(async (_req, _res, next) => {
 
 app.use("/auth", authRouter);
 app.use("/banks", banksRouter);
+app.use("/market", marketRouter);
 app.use("/me", meRouter);
 app.use("/calls", callsRouter);
 app.use("/chat", chatRouter);

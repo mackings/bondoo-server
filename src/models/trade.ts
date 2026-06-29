@@ -12,7 +12,9 @@ export type TradeStatus =
 
 export type TradeDoc = {
   _id: mongoose.Types.ObjectId;
-  offerId: mongoose.Types.ObjectId;
+  offerId?: mongoose.Types.ObjectId;
+  conversationId?: mongoose.Types.ObjectId;
+  source: "offer" | "direct";
   buyerUserId: mongoose.Types.ObjectId;   // accepts the offer, pays fiat
   sellerUserId: mongoose.Types.ObjectId;  // posted the offer, deposits crypto
   coin: string;
@@ -50,7 +52,9 @@ export type TradeDoc = {
 
 const tradeSchema = new Schema<TradeDoc>(
   {
-    offerId:       { type: Schema.Types.ObjectId, ref: "Offer",  required: true, index: true },
+    offerId:       { type: Schema.Types.ObjectId, ref: "Offer",  index: true },
+    conversationId: { type: Schema.Types.ObjectId, ref: "Conversation", index: true },
+    source:        { type: String, enum: ["offer", "direct"], default: "offer" },
     buyerUserId:   { type: Schema.Types.ObjectId, ref: "User",   required: true, index: true },
     sellerUserId:  { type: Schema.Types.ObjectId, ref: "User",   required: true, index: true },
     coin:          { type: String, required: true, uppercase: true },

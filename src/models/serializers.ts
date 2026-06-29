@@ -25,6 +25,17 @@ export function userPublic(user: any) {
       provider: wallet.provider,
       address: wallet.address,
     })),
+    trade_status: user.tradeStatus
+      ? {
+          type: user.tradeStatus.type,
+          coin: user.tradeStatus.coin,
+          network: user.tradeStatus.network,
+          payment_method: user.tradeStatus.paymentMethod,
+          rate: user.tradeStatus.rate ?? null,
+          active: user.tradeStatus.active,
+          updated_at: user.tradeStatus.updatedAt,
+        }
+      : null,
     email_verified: user.emailVerified,
     created_at: user.createdAt,
     updated_at: user.updatedAt,
@@ -56,6 +67,8 @@ export function messageJson(message: any) {
     transfer_note: message.transferNote ?? null,
     offer_id: message.offerId ? id(message.offerId) : null,
     offer: message.offerSnapshot ?? null,
+    trade_id: message.tradeId ? id(message.tradeId) : null,
+    trade: message.tradeSnapshot ?? null,
     read_by: (message.readReceipts ?? []).map((receipt: any) => ({
       user_id: id(receipt.userId),
       read_at: receipt.readAt,

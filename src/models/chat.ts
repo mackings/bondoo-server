@@ -15,7 +15,7 @@ export type MessageDoc = {
   _id: mongoose.Types.ObjectId;
   conversationId: mongoose.Types.ObjectId;
   senderId: mongoose.Types.ObjectId;
-  kind: "text" | "transfer" | "offer" | "voice" | "image";
+  kind: "text" | "transfer" | "offer" | "voice" | "image" | "trade_proposal" | "trade_update";
   body?: string;
   voiceDataUrl?: string;
   voiceDurationMs?: number;
@@ -25,6 +25,8 @@ export type MessageDoc = {
   transferNote?: string;
   offerId?: mongoose.Types.ObjectId;
   offerSnapshot?: Record<string, unknown>;
+  tradeId?: mongoose.Types.ObjectId;
+  tradeSnapshot?: Record<string, unknown>;
   readReceipts: Array<{
     userId: mongoose.Types.ObjectId;
     readAt: Date;
@@ -48,7 +50,7 @@ const messageSchema = new Schema<MessageDoc>(
   {
     conversationId: { type: Schema.Types.ObjectId, ref: "Conversation", required: true, index: true },
     senderId: { type: Schema.Types.ObjectId, ref: "User", required: true },
-    kind: { type: String, enum: ["text", "transfer", "offer", "voice", "image"], default: "text" },
+    kind: { type: String, enum: ["text", "transfer", "offer", "voice", "image", "trade_proposal", "trade_update"], default: "text" },
     body: String,
     voiceDataUrl: String,
     voiceDurationMs: Number,
@@ -58,6 +60,8 @@ const messageSchema = new Schema<MessageDoc>(
     transferNote: String,
     offerId: { type: Schema.Types.ObjectId, ref: "Offer" },
     offerSnapshot: Schema.Types.Mixed,
+    tradeId: { type: Schema.Types.ObjectId, ref: "Trade" },
+    tradeSnapshot: Schema.Types.Mixed,
     readReceipts: {
       type: [
         {

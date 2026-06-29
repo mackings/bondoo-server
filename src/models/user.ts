@@ -2,6 +2,16 @@ import mongoose, { Schema } from "mongoose";
 
 export type UserRole = "user" | "admin";
 
+export type TradeStatusDoc = {
+  type: "selling" | "buying";
+  coin: string;
+  network: string;
+  paymentMethod: string;
+  rate?: number;
+  active: boolean;
+  updatedAt: Date;
+};
+
 export type UserDoc = {
   _id: mongoose.Types.ObjectId;
   email: string;
@@ -23,6 +33,7 @@ export type UserDoc = {
     provider: string;
     address: string;
   }>;
+  tradeStatus?: TradeStatusDoc;
   emailVerified: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -58,6 +69,18 @@ const userSchema = new Schema<UserDoc>(
         },
       ],
       default: [],
+    },
+    tradeStatus: {
+      type: {
+        type: String,
+        enum: ["selling", "buying"],
+      },
+      coin: String,
+      network: String,
+      paymentMethod: String,
+      rate: Number,
+      active: { type: Boolean, default: false },
+      updatedAt: { type: Date, default: Date.now },
     },
     emailVerified: { type: Boolean, default: false },
   },

@@ -14,6 +14,7 @@ import { sendPayoutFromHDWallet } from "../treasury/wallet/payout.service.js";
 import { findBlockchainDeposit } from "../treasury/blockchain/chain-detector.js";
 import { nextDepositIndex } from "../../models/counter.js";
 import { notifyUser } from "../../notifications.js";
+import { ConversationModel, MessageModel } from "../../models/chat.js";
 
 export const tradesRouter = Router();
 tradesRouter.use(requireAuth);
@@ -39,10 +40,39 @@ function docId(field: any): string {
   return String(field?._id ?? field);
 }
 
+async function postTradeSystemMessage(trade: any, body: string) {
+  if (!trade.conversationId) return;
+  try {
+    const snapshot = {
+      id: String(trade._id),
+      coin: trade.coin,
+      network: trade.network,
+      crypto_amount: trade.cryptoAmount,
+      fiat_amount: trade.fiatAmount,
+      fiat_currency: trade.fiatCurrency,
+      status: trade.status,
+    };
+    const message = await MessageModel.create({
+      conversationId: trade.conversationId,
+      senderId: trade.sellerUserId._id ?? trade.sellerUserId,
+      kind: "trade_update",
+      tradeId: trade._id,
+      tradeSnapshot: snapshot,
+      body,
+    });
+    await ConversationModel.findByIdAndUpdate(trade.conversationId, { lastMessageAt: new Date() });
+    return message;
+  } catch (err) {
+    console.error("[TradeSystemMsg] failed:", err);
+  }
+}
+
 function tradeJson(trade: any, includeUsers = false) {
   return {
     id: String(trade._id),
-    offer_id: String(trade.offerId),
+    offer_id: trade.offerId ? String(trade.offerId) : null,
+    conversation_id: trade.conversationId ? String(trade.conversationId) : null,
+    source: trade.source ?? "offer",
     buyer_user_id: docId(trade.buyerUserId),
     seller_user_id: docId(trade.sellerUserId),
     buyer: includeUsers && trade.buyerUserId?.username ? {
@@ -271,6 +301,8 @@ tradesRouter.post("/:id/check-deposit", async (req, res) => {
     data: { type: "trade", trade_id: String(trade._id), status: "escrowed" },
   }).catch(console.error);
 
+  postTradeSystemMessage(trade, `Escrow confirmed — ${trade.cryptoAmount.toFixed(8)} ${trade.coin} is locked. Buyer should now pay ${trade.fiatAmount} ${trade.fiatCurrency} via ${trade.paymentMethod}.`).catch(console.error);
+
   res.json({ found: true, trade: tradeJson(trade, true) });
 });
 
@@ -319,6 +351,8 @@ tradesRouter.post("/:id/payment-sent", upload.single("receipt"), async (req, res
     body: `Your payment receipt has been submitted. The seller has been notified to verify and release ${trade.cryptoAmount.toFixed(8)} ${trade.coin} to your wallet.`,
     data: { type: "trade", trade_id: String(trade._id), status: "payment_sent" },
   }).catch(console.error);
+
+  postTradeSystemMessage(trade, `Payment sent — buyer has uploaded the payment receipt for ${trade.fiatAmount} ${trade.fiatCurrency}. Seller should verify and release crypto.`).catch(console.error);
 
   res.json(tradeJson(trade, true));
 });
@@ -397,6 +431,8 @@ tradesRouter.post("/:id/release", async (req, res) => {
     data: { type: "trade", trade_id: String(trade._id), status: "completed" },
   }).catch(console.error);
 
+  postTradeSystemMessage(trade, `Trade completed! ${effectivePayout.toFixed(8)} ${trade.coin} has been released to the buyer's wallet.`).catch(console.error);
+
   res.json(tradeJson(trade, true));
 });
 
@@ -443,6 +479,8 @@ tradesRouter.post("/:id/cancel", async (req, res) => {
     data: { type: "trade", trade_id: String(trade._id), status: "cancelled" },
   }).catch(console.error);
 
+  postTradeSystemMessage(trade, `Trade cancelled — the ${trade.coin} trade has been cancelled.`).catch(console.error);
+
   res.json(tradeJson(trade, true));
 });
 
@@ -486,6 +524,8 @@ tradesRouter.post("/:id/dispute", async (req, res) => {
     body: `Your dispute for the ${trade.coin} trade has been submitted. Our team will review it and contact you shortly.`,
     data: { type: "trade", trade_id: String(trade._id), status: "disputed" },
   }).catch(console.error);
+
+  postTradeSystemMessage(trade, `Dispute raised — our team will review the ${trade.coin} trade and contact both parties.`).catch(console.error);
 
   res.json({ trade: tradeJson(trade, true), reason: body.reason });
 });

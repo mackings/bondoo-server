@@ -104,6 +104,35 @@ meRouter.post("/push-token", async (req, res) => {
   res.json({ ok: true });
 });
 
+meRouter.patch("/trade-status", async (req, res) => {
+  const body = z.object({
+    type: z.enum(["selling", "buying"]),
+    coin: z.enum(["BTC", "ETH", "USDC", "USDT"]),
+    network: z.string().min(2).max(20).transform((v) => v.toUpperCase()),
+    payment_method: z.string().min(2).max(80),
+    rate: z.number().positive().optional(),
+    active: z.boolean().default(true),
+  }).parse(req.body);
+
+  req.user!.tradeStatus = {
+    type: body.type,
+    coin: body.coin,
+    network: body.network,
+    paymentMethod: body.payment_method,
+    rate: body.rate,
+    active: body.active,
+    updatedAt: new Date(),
+  };
+  await req.user!.save();
+  res.json(userPublic(req.user!));
+});
+
+meRouter.delete("/trade-status", async (req, res) => {
+  req.user!.tradeStatus = undefined;
+  await req.user!.save();
+  res.json(userPublic(req.user!));
+});
+
 meRouter.post("/otp/email/send", async (req, res) => {
   const email = await sendEmailOtp({
     userId: req.userId!,
