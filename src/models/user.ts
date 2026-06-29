@@ -31,6 +31,7 @@ export type UserDoc = {
   }>;
   payoutWallets: Array<{
     asset: "BTC" | "ETH" | "USDC" | "USDT";
+    network: string;
     provider: string;
     address: string;
   }>;
@@ -67,6 +68,7 @@ const userSchema = new Schema<UserDoc>(
       type: [
         {
           asset: { type: String, enum: ["BTC", "ETH", "USDC", "USDT"], required: true },
+          network: { type: String, required: true, trim: true },
           provider: { type: String, required: true, trim: true },
           address: { type: String, required: true, trim: true },
         },

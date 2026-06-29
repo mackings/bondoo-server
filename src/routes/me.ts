@@ -39,22 +39,34 @@ meRouter.post("/profile/avatar", async (req, res) => {
   res.json(userPublic(req.user!));
 });
 
+const networksByChain: Record<string, string[]> = {
+  btc:  ["BTC"],
+  eth:  ["ERC20"],
+  usdc: ["ERC20", "TRC20", "BSC"],
+  usdt: ["TRC20", "ERC20", "BSC"],
+};
+
 meRouter.post("/linked-wallet", async (req, res) => {
   const body = z.object({
     chain: z.enum(["btc", "eth", "usdc", "usdt"]),
+    network: z.string().min(2).max(20).optional(),
     address: z.string().min(10),
     provider: z.string().min(2).max(80).optional().default("External wallet"),
   }).parse(req.body);
 
+  const validNets = networksByChain[body.chain];
+  const network = body.network && validNets.includes(body.network)
+    ? body.network
+    : validNets[0];
+
   if (body.chain === "btc") req.user!.linkedBtcAddress = body.address;
   if (body.chain === "eth") req.user!.linkedEthAddress = body.address;
   const asset = body.chain.toUpperCase() as "BTC" | "ETH" | "USDC" | "USDT";
-  req.user!.payoutWallets = (req.user!.payoutWallets ?? []).filter((wallet) => wallet.asset !== asset);
-  req.user!.payoutWallets.push({
-    asset,
-    provider: body.provider,
-    address: body.address,
-  });
+  // Remove existing entry for same asset+network combo, then add the new one
+  req.user!.payoutWallets = (req.user!.payoutWallets ?? []).filter(
+    (w) => !(w.asset === asset && (w.network === network || !w.network)),
+  );
+  req.user!.payoutWallets.push({ asset, network, provider: body.provider, address: body.address });
   await req.user!.save();
   res.json(userPublic(req.user!));
 });
