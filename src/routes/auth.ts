@@ -17,15 +17,29 @@ function hashResetCode(code: string) {
   return createHash("sha256").update(code).digest("hex");
 }
 
+function normalizePhone(raw: string): string {
+  const cleaned = raw.replace(/[\s\-\(\)\.]+/g, "");
+  if (cleaned.startsWith("+")) return cleaned;
+  const digits = cleaned.replace(/[^\d]/g, "");
+  if (digits.startsWith("234")) return `+${digits}`;
+  if (digits.startsWith("0") && digits.length === 11) return `+234${digits.slice(1)}`;
+  return `+${digits}`;
+}
+
 authRouter.post("/signup", async (req, res) => {
   const body = z.object({
     email: z.string().email().transform((v) => v.toLowerCase()),
     password: z.string().min(6),
     display_name: z.string().min(1).optional(),
+    phone: z.string().min(7),
   }).parse(req.body);
 
   const existing = await UserModel.findOne({ email: body.email });
   if (existing) return res.status(409).json({ error: "Email already registered" });
+
+  const normalizedPhone = normalizePhone(body.phone);
+  const phoneInUse = await UserModel.findOne({ phone: normalizedPhone });
+  if (phoneInUse) return res.status(409).json({ error: "Phone number already registered" });
 
   const baseUsername = body.email.split("@")[0].toLowerCase().replace(/[^a-z0-9_]/g, "") || "user";
   let username = baseUsername;
@@ -41,6 +55,7 @@ authRouter.post("/signup", async (req, res) => {
     passwordHash,
     displayName: body.display_name || username,
     username,
+    phone: normalizedPhone,
   });
 
   await WalletModel.insertMany([

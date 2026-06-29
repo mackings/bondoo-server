@@ -14,6 +14,7 @@ import { escrowRouter } from "./modules/escrow/escrow.routes.js";
 import { tradesRouter } from "./modules/trades/trades.routes.js";
 import { adminRouter } from "./routes/admin.js";
 import { authRouter } from "./routes/auth.js";
+import { contactsRouter } from "./routes/contacts.js";
 import { banksRouter } from "./routes/banks.js";
 import { callsRouter } from "./routes/calls.js";
 import { chatRouter } from "./routes/chat.js";
@@ -64,6 +65,7 @@ app.use(async (_req, _res, next) => {
 });
 
 app.use("/auth", authRouter);
+app.use("/contacts", contactsRouter);
 app.use("/banks", banksRouter);
 app.use("/market", marketRouter);
 app.use("/me", meRouter);

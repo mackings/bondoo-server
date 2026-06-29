@@ -11,6 +11,7 @@ export function userPublic(user: any) {
     display_name: user.displayName,
     avatar_url: user.avatarUrl ?? null,
     email: user.email,
+    phone: user.phone ?? null,
     role: user.role,
     linked_btc_address: user.linkedBtcAddress ?? null,
     linked_eth_address: user.linkedEthAddress ?? null,

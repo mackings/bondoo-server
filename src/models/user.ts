@@ -19,6 +19,7 @@ export type UserDoc = {
   displayName: string;
   username: string;
   avatarUrl?: string;
+  phone?: string;
   role: UserRole;
   linkedBtcAddress?: string;
   linkedEthAddress?: string;
@@ -84,6 +85,7 @@ const userSchema = new Schema<UserDoc>(
       active: { type: Boolean, default: false },
       updatedAt: { type: Date, default: Date.now },
     },
+    phone:          { type: String, sparse: true, unique: true },
     walletIndex:    { type: Number },
     lastWalletScan: { type: Date },
     emailVerified:  { type: Boolean, default: false },
