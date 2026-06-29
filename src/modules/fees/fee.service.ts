@@ -11,16 +11,20 @@ export type FeeQuote = {
 
 // ─── RPC endpoints ────────────────────────────────────────────────────────────
 
-const TESTNET_RPCS: Record<string, string> = {
-  ERC20: "https://ethereum-sepolia.publicnode.com",
-  BSC:   "https://bsc-testnet-rpc.publicnode.com",
-  BEP20: "https://bsc-testnet-rpc.publicnode.com",
+const TESTNET_RPCS: Record<string, string[]> = {
+  ERC20: ["https://ethereum-sepolia.publicnode.com", "https://sepolia.drpc.org"],
+  BSC:   ["https://bsc-testnet-rpc.publicnode.com", "https://bsc-testnet.drpc.org"],
+  BEP20: ["https://bsc-testnet-rpc.publicnode.com", "https://bsc-testnet.drpc.org"],
 };
 
-const MAINNET_RPCS: Record<string, string> = {
-  ERC20: "https://eth.llamarpc.com",
-  BSC:   "https://bsc-dataseed1.binance.org",
-  BEP20: "https://bsc-dataseed1.binance.org",
+const MAINNET_RPCS: Record<string, string[]> = {
+  ERC20: [
+    "https://ethereum.publicnode.com",
+    "https://rpc.ankr.com/eth",
+    "https://eth.drpc.org",
+  ],
+  BSC:   ["https://bsc-dataseed1.binance.org", "https://bsc.publicnode.com", "https://rpc.ankr.com/bsc"],
+  BEP20: ["https://bsc-dataseed1.binance.org", "https://bsc.publicnode.com", "https://rpc.ankr.com/bsc"],
 };
 
 // Protocol constants — fixed by the Ethereum/Bitcoin spec, not business choices
@@ -30,19 +34,27 @@ const GAS_LIMIT_ERC20  = 65_000n;   // ERC20 token transfer
 // ─── Live gas estimation ──────────────────────────────────────────────────────
 
 async function estimateEVMGas(network: string, isToken: boolean): Promise<number> {
-  const rpcs = config.bybitTestnet ? TESTNET_RPCS : MAINNET_RPCS;
-  const rpcUrl = rpcs[network.toUpperCase()];
-  if (!rpcUrl) throw new Error(`No RPC configured for EVM network "${network}"`);
+  const rpcMap = config.bybitTestnet ? TESTNET_RPCS : MAINNET_RPCS;
+  const urls = rpcMap[network.toUpperCase()];
+  if (!urls?.length) throw new Error(`No RPC configured for EVM network "${network}"`);
 
-  const provider = new ethers.JsonRpcProvider(rpcUrl);
-  const feeData = await provider.getFeeData();
-  if (!feeData.gasPrice) throw new Error(`RPC did not return a gas price for ${network}`);
-
-  const gasLimit = isToken ? GAS_LIMIT_ERC20 : GAS_LIMIT_NATIVE;
-  const gasCostWei = feeData.gasPrice * gasLimit;
-  // 20% buffer so the quote stays valid by the time the seller sends
-  const buffered = (gasCostWei * 120n) / 100n;
-  return Number(ethers.formatEther(buffered));
+  let lastErr: unknown;
+  for (const url of urls) {
+    try {
+      const provider = new ethers.JsonRpcProvider(url);
+      const feeData = await provider.getFeeData();
+      if (!feeData.gasPrice) throw new Error(`RPC did not return a gas price`);
+      const gasLimit = isToken ? GAS_LIMIT_ERC20 : GAS_LIMIT_NATIVE;
+      const gasCostWei = feeData.gasPrice * gasLimit;
+      // 20% buffer so the quote stays valid by the time the seller sends
+      const buffered = (gasCostWei * 120n) / 100n;
+      return Number(ethers.formatEther(buffered));
+    } catch (err) {
+      console.warn(`[FeeService] RPC ${url} failed: ${(err as Error).message}`);
+      lastErr = err;
+    }
+  }
+  throw lastErr;
 }
 
 async function estimateBTCFee(): Promise<number> {

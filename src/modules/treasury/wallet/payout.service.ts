@@ -52,9 +52,9 @@ const RPCS: Record<string, string[]> = {
         "https://rpc.sepolia.org",
       ]
     : [
-        "https://eth.llamarpc.com",
-        "https://rpc.ankr.com/eth",
         "https://ethereum.publicnode.com",
+        "https://rpc.ankr.com/eth",
+        "https://eth.drpc.org",
       ],
   BSC: config.bybitTestnet
     ? [
