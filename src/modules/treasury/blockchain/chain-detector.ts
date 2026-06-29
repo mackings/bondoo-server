@@ -76,7 +76,6 @@ async function findEVMDeposit(params: {
       `${explorerBase}?module=account&action=tokentx${contractParam}` +
       `&address=${encodeURIComponent(params.address)}&sort=desc&apikey=${apiKey}`;
 
-    console.log(`[ChainDetector] EVM token query ${params.chain.toUpperCase()}: ${url}`);
     const data = await fetchJson(url);
 
     if (data.status === "1" && Array.isArray(data.result)) {
@@ -89,7 +88,6 @@ async function findEVMDeposit(params: {
       );
       if (match) {
         const amt = (Number(match.value) / 10 ** DECIMALS).toString();
-        console.log(`[ChainDetector] EVM token match: txid=${match.hash} amount=${amt}`);
         return { txid: match.hash, amount: amt };
       }
     }
@@ -111,7 +109,6 @@ async function findEVMDeposit(params: {
     );
     if (match) {
       const amt = (Number(match.value) / 1e18).toString();
-      console.log(`[ChainDetector] EVM native match: txid=${match.hash} amount=${amt}`);
       return { txid: match.hash, amount: amt };
     }
   }
@@ -145,10 +142,8 @@ async function findTRC20Deposit(params: {
   const headers: Record<string, string> = {};
   if (config.tronGridApiKey) headers["TRON-PRO-API-KEY"] = config.tronGridApiKey;
 
-  console.log(`[ChainDetector] TRC20 query: ${url}`);
   const data = await fetchJson(url, headers);
   const txs: any[] = Array.isArray(data.data) ? data.data : [];
-  console.log(`[ChainDetector] TRC20: ${txs.length} tx(s) returned`);
 
   const match = txs.find(
     (tx) =>
@@ -159,7 +154,6 @@ async function findTRC20Deposit(params: {
 
   if (match) {
     const amt = (Number(match.value) / 1e6).toString();
-    console.log(`[ChainDetector] TRC20 match: txid=${match.transaction_id} amount=${amt}`);
     return { txid: match.transaction_id, amount: amt };
   }
   return null;
@@ -178,11 +172,8 @@ async function findBTCDeposit(params: {
     : "https://blockstream.info/api";
 
   const url = `${base}/address/${params.address}/txs`;
-  console.log(`[ChainDetector] BTC query: ${url}`);
-
   const txs = await fetchJson(url);
   if (!Array.isArray(txs)) return null;
-  console.log(`[ChainDetector] BTC: ${txs.length} tx(s) for ${params.address}`);
 
   for (const tx of txs) {
     if (!tx.status?.confirmed) continue; // skip unconfirmed
@@ -194,7 +185,6 @@ async function findBTCDeposit(params: {
       .reduce((sum, v) => sum + Number(v.value), 0) / 1e8; // satoshi → BTC
 
     if (received >= params.minAmount * 0.999) {
-      console.log(`[ChainDetector] BTC match: txid=${tx.txid} amount=${received}`);
       return { txid: tx.txid, amount: received.toString() };
     }
   }
@@ -228,11 +218,6 @@ export async function findBlockchainDeposit(params: {
 }): Promise<{ txid: string; amount: string } | null> {
   const net = params.network.toUpperCase();
   const coin = params.coin.toUpperCase();
-
-  console.log(
-    `[ChainDetector] Checking ${coin}/${net} at ${params.depositAddress}` +
-    ` for >= ${params.minAmount} after ${new Date(params.afterTimestamp).toISOString()}`,
-  );
 
   if (net === "BTC" || coin === "BTC") {
     return findBTCDeposit({

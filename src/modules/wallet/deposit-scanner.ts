@@ -58,8 +58,6 @@ export async function scanUserDeposits(): Promise<ScanResult> {
 
   if (!users.length) return { usersScanned: 0, depositsFound: 0, errors: [] };
 
-  console.log(`[DepositScanner] scanning ${users.length} user(s)`);
-
   await Promise.all(
     users.map(async (user) => {
       const walletIndex    = user.walletIndex!;

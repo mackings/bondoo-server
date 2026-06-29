@@ -35,7 +35,9 @@ const helmet = ((helmetModule as unknown as { default?: unknown }).default ?? he
 app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 app.use(cors({ origin: config.corsOrigin === "*" ? true : config.corsOrigin }));
 app.use(express.json({ limit: "5mb" }));
-app.use(morgan("dev"));
+app.use(morgan("dev", {
+  skip: (req) => req.path === "/health" || req.path.startsWith("/calls/pending"),
+}));
 app.use("/uploads", express.static("/tmp/uploads"));
 
 app.get("/health", (_req, res) => res.json({ ok: true, service: "bondoo-api" }));
