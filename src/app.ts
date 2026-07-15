@@ -24,6 +24,7 @@ import { meRouter } from "./routes/me.js";
 import { walletRouter } from "./routes/wallet.js";
 import { offersRouter } from "./routes/offers.js";
 import { ratesRouter } from "./routes/rates.js";
+import { storiesRouter } from "./routes/stories.js";
 import { scanUserDeposits } from "./modules/wallet/deposit-scanner.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -75,6 +76,7 @@ app.use("/calls", callsRouter);
 app.use("/chat", chatRouter);
 app.use("/offers", offersRouter);
 app.use("/rates", ratesRouter);
+app.use("/stories", storiesRouter);
 app.use("/escrow", escrowRouter);
 app.use("/trades", tradesRouter);
 app.use("/admin", adminRouter);
