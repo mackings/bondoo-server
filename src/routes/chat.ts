@@ -180,6 +180,35 @@ chatRouter.post("/conversations/:id/images", async (req, res) => {
   res.status(201).json(imagePayload);
 });
 
+chatRouter.post("/conversations/:id/story-replies", async (req, res) => {
+  const body = z.object({
+    body: z.string().trim().max(4000).optional(),
+    story_reply_image_data_url: z.string().startsWith("data:image/").max(4_000_000).optional(),
+    story_reply_caption: z.string().max(300).optional(),
+    story_reply_poster_name: z.string().max(100).optional(),
+  }).parse(req.body);
+  if (!body.body && !body.story_reply_image_data_url) {
+    return res.status(400).json({ error: "Story reply must include text or an image." });
+  }
+  const conversation = await ConversationModel.findById(req.params.id);
+  if (!conversation || !conversation.memberIds.some((id) => String(id) === req.userId)) return res.status(404).json({ error: "Conversation not found" });
+  const message = await MessageModel.create({
+    conversationId: conversation._id,
+    senderId: req.user!._id,
+    body: body.body ?? undefined,
+    kind: "story_reply",
+    storyReplyImageDataUrl: body.story_reply_image_data_url,
+    storyReplyCaption: body.story_reply_caption,
+    storyReplyPosterName: body.story_reply_poster_name,
+  });
+  conversation.lastMessageAt = new Date();
+  await conversation.save();
+  const payload = messageJson(message);
+  emitNewMessage(conversation.memberIds.map(String), payload);
+  await notifyConversationRecipients(conversation, message, req.user!);
+  res.status(201).json(payload);
+});
+
 chatRouter.post("/conversations/:id/transfers", async (req, res) => {
   const body = z.object({
     recipient_id: z.string(),
