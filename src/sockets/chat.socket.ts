@@ -16,6 +16,12 @@ export function emitNewMessage(memberIds: string[], payload: object) {
   }
 }
 
+/** Broadcast a new or deleted story to all connected users. */
+export function emitStoryEvent(event: "new_story" | "story_deleted", payload: object) {
+  if (!io) return;
+  io.emit(event, payload);
+}
+
 export function initSocket(httpServer: HttpServer) {
   io = new Server(httpServer, {
     cors: { origin: "*", methods: ["GET", "POST"] },

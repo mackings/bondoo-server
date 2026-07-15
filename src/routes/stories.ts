@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireAuth } from "../middleware/auth.js";
 import { StoryModel } from "../models/story.js";
 import { userPublic } from "../models/serializers.js";
+import { emitStoryEvent } from "../sockets/chat.socket.js";
 
 export const storiesRouter = Router();
 storiesRouter.use(requireAuth);
@@ -26,7 +27,9 @@ storiesRouter.post("/", async (req, res) => {
     expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
   });
 
-  res.json(toStoryJson(story, req.user!));
+  const payload = { ...toStoryJson(story, req.user!), user: userPublic(req.user!) };
+  emitStoryEvent("new_story", payload);
+  res.json(payload);
 });
 
 // ── GET /stories — all active stories from other users ───────────────────
@@ -47,13 +50,14 @@ storiesRouter.get("/mine", async (req, res) => {
   const story = await StoryModel.findOne({
     userId: req.user!._id,
     expiresAt: { $gt: new Date() },
-  }).populate("viewedBy.userId");
+  }).populate("viewedBy.userId").populate("userId");
 
   if (!story) return res.json(null);
 
   const base = toStoryJson(story, req.user!);
   res.json({
     ...base,
+    user: userPublic(req.user!),
     viewers: story.viewedBy.map((v: any) => ({
       user_id: String(v.userId?._id ?? v.userId),
       user: v.userId?.email ? userPublic(v.userId) : null,
@@ -65,6 +69,7 @@ storiesRouter.get("/mine", async (req, res) => {
 // ── DELETE /stories/mine ─────────────────────────────────────────────────
 storiesRouter.delete("/mine", async (req, res) => {
   await StoryModel.deleteMany({ userId: req.user!._id });
+  emitStoryEvent("story_deleted", { user_id: String(req.user!._id) });
   res.json({ ok: true });
 });
 
