@@ -16,10 +16,13 @@ export function emitNewMessage(memberIds: string[], payload: object) {
   }
 }
 
-/** Broadcast a new or deleted story to all connected users. */
-export function emitStoryEvent(event: "new_story" | "story_deleted", payload: object) {
+/** Broadcast a new or deleted story to all connected users.
+ *  Strip image_data_url — it can be 1-2 MB of base64 and will overflow
+ *  Socket.IO's default 1 MB buffer. Clients reload via REST on receipt. */
+export function emitStoryEvent(event: "new_story" | "story_deleted", payload: any) {
   if (!io) return;
-  io.emit(event, payload);
+  const { image_data_url: _stripped, ...meta } = payload;
+  io.emit(event, meta);
 }
 
 export function initSocket(httpServer: HttpServer) {
