@@ -12,7 +12,7 @@ import { TradeModel } from "../models/trade.js";
 import { quoteFees } from "../modules/fees/fee.service.js";
 import { generateDepositAddress } from "../modules/treasury/wallet/deposit-address.service.js";
 import { nextDepositIndex } from "../models/counter.js";
-import { io } from "../sockets/chat.socket.js";
+import { emitNewMessage } from "../sockets/chat.socket.js";
 
 export const chatRouter = Router();
 
@@ -133,7 +133,7 @@ chatRouter.post("/conversations/:id/messages", async (req, res) => {
   conversation.lastMessageAt = new Date();
   await conversation.save();
   const textPayload = messageJson(message);
-  io?.to(`conv:${String(conversation._id)}`).emit("new_message", textPayload);
+  emitNewMessage(conversation.memberIds.map(String), textPayload);
   await notifyConversationRecipients(conversation, message, req.user!);
   res.status(201).json(textPayload);
 });
@@ -155,7 +155,7 @@ chatRouter.post("/conversations/:id/voice-notes", async (req, res) => {
   conversation.lastMessageAt = new Date();
   await conversation.save();
   const voicePayload = messageJson(message);
-  io?.to(`conv:${String(conversation._id)}`).emit("new_message", voicePayload);
+  emitNewMessage(conversation.memberIds.map(String), voicePayload);
   await notifyConversationRecipients(conversation, message, req.user!);
   res.status(201).json(voicePayload);
 });
@@ -175,7 +175,7 @@ chatRouter.post("/conversations/:id/images", async (req, res) => {
   conversation.lastMessageAt = new Date();
   await conversation.save();
   const imagePayload = messageJson(message);
-  io?.to(`conv:${String(conversation._id)}`).emit("new_message", imagePayload);
+  emitNewMessage(conversation.memberIds.map(String), imagePayload);
   await notifyConversationRecipients(conversation, message, req.user!);
   res.status(201).json(imagePayload);
 });
@@ -218,7 +218,7 @@ chatRouter.post("/conversations/:id/transfers", async (req, res) => {
   if (message) {
     const transferMsg = (message as any)[0];
     const transferPayload = messageJson(transferMsg);
-    io?.to(`conv:${String(conversation._id)}`).emit("new_message", transferPayload);
+    emitNewMessage(conversation.memberIds.map(String), transferPayload);
     await notifyConversationRecipients(conversation, transferMsg, req.user!);
   }
 
@@ -282,7 +282,7 @@ chatRouter.post("/offers/:id/open", async (req, res) => {
   conversation.lastMessageAt = new Date();
   await conversation.save();
   const offerMsgPayload = messageJson(message);
-  io?.to(`conv:${String(conversation._id)}`).emit("new_message", offerMsgPayload);
+  emitNewMessage(conversation.memberIds.map(String), offerMsgPayload);
   await notifyConversationRecipients(conversation, message, req.user!);
   res.status(201).json({ conversation_id: String(conversation._id), message: offerMsgPayload });
 });
@@ -390,7 +390,7 @@ chatRouter.post("/conversations/:id/propose-trade", async (req, res) => {
   await conversation.save();
 
   const tradePayload = messageJson(message);
-  io?.to(`conv:${String(conversation._id)}`).emit("new_message", tradePayload);
+  emitNewMessage(conversation.memberIds.map(String), tradePayload);
 
   notifyUser({
     user: seller,

@@ -8,6 +8,14 @@ import { messageJson } from "../models/serializers.js";
 
 export let io: Server | undefined;
 
+/** Broadcast new_message to every member's personal user room. */
+export function emitNewMessage(memberIds: string[], payload: object) {
+  if (!io) return;
+  for (const memberId of memberIds) {
+    io.to(`user:${memberId}`).emit("new_message", payload);
+  }
+}
+
 export function initSocket(httpServer: HttpServer) {
   io = new Server(httpServer, {
     cors: { origin: "*", methods: ["GET", "POST"] },
@@ -30,6 +38,9 @@ export function initSocket(httpServer: HttpServer) {
 
   io.on("connection", (socket) => {
     const userId = socket.data.userId as string;
+    // Always join the personal user room so messages arrive even from
+    // the conversations list screen (not just inside an open chat).
+    socket.join(`user:${userId}`);
 
     socket.on("join_conversation", (conversationId: string) => {
       socket.join(`conv:${conversationId}`);
@@ -57,7 +68,7 @@ export function initSocket(httpServer: HttpServer) {
         conversation.lastMessageAt = new Date();
         await conversation.save();
         const payload = messageJson(message);
-        io!.to(`conv:${data.conversation_id}`).emit("new_message", payload);
+        emitNewMessage(conversation.memberIds.map(String), payload);
         callback?.({ ok: true, message: payload });
       } catch (err: any) {
         callback?.({ error: err.message ?? "Failed to send message" });
