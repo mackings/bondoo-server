@@ -78,7 +78,7 @@ export async function createDVA(user: any): Promise<boolean> {
 
   try {
     const dvaResult = await paystackPost("/dedicated_account", {
-      customer:       customerId,   // numeric id — same as Retilda's customer.id
+      customer:       customerId,
       preferred_bank: "wema-bank",
     });
 

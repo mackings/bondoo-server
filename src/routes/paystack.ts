@@ -288,16 +288,19 @@ paystackRouter.post("/virtual-account", requireAuth, async (req, res) => {
   res.json(user.virtualAccount);
 });
 
-// ── BVN/NIN KYC + wallet creation (Retilda Step C+D+F) ───────────────────────
+// ── BVN/NIN submission + wallet creation ─────────────────────────────────────
 // POST /paystack/identify
 // Body: { type: "bvn" | "nin", value: "11-digit number" }
 //
-// Retilda pattern (exact):
-//   Step C — POST /customer   (get customer.id)
-//   Step D — POST /dedicated_account with customer.id → wallet created
-//   Step F — BVN stored LOCALLY ONLY, never sent to Paystack identification API
-//
-// Returns { status: "verified" } on success — no polling needed.
+// Flow:
+//   1. Store BVN locally
+//   2. Create Paystack customer (Step C)
+//   3. Submit BVN to Paystack identification API
+//   4. Try DVA immediately — returns "verified" if Paystack approves fast
+//   5. If not ready yet — returns "submitted" so Flutter can show a static
+//      "wallet being set up" screen. Webhook (customeridentification.success)
+//      fires createDVA when Paystack finishes. Next app open picks it up via
+//      refreshMe() in restore() — no active polling needed.
 paystackRouter.post("/identify", requireAuth, async (req, res) => {
   const body = z.object({
     type:  z.enum(["bvn", "nin"]),
@@ -307,32 +310,51 @@ paystackRouter.post("/identify", requireAuth, async (req, res) => {
   const user = await UserModel.findById(req.user!._id);
   if (!user) return res.status(404).json({ error: "User not found" });
 
-  // Already has wallet — store BVN and return
   if (user.virtualAccount?.accountNumber) {
     await UserModel.findByIdAndUpdate(user._id, { "kyc.type": body.type, "kyc.value": body.value });
     return res.json({ status: "verified" });
   }
 
-  // Step F: Store BVN/NIN locally (compliance record only, not sent to Paystack)
+  // Store BVN/NIN locally
   await UserModel.findByIdAndUpdate(user._id, { "kyc.type": body.type, "kyc.value": body.value });
 
-  // Step C: Create Paystack customer if not already done
+  // Step C: Create Paystack customer
+  let customerCode: string;
   try {
-    await createOrGetPaystackCustomer(user);
+    const c = await createOrGetPaystackCustomer(user);
+    customerCode = c.customerCode;
   } catch (err: any) {
     console.error("[identify] customer creation failed:", err.message);
     return res.status(502).json({ error: "Could not create account profile. Please try again." });
   }
 
-  // Step D: Create Dedicated Virtual Account
-  const ok = await createDVA(user);
-  if (!ok) {
-    console.error("[identify] DVA creation failed for user", user._id);
-    return res.status(502).json({ error: "Could not create wallet. Please try again." });
+  // Submit BVN/NIN to Paystack for identification
+  try {
+    const parts = (user.displayName ?? "").split(" ");
+    await paystackPost(`/customer/${customerCode}/identification`, {
+      country:    "NG",
+      type:       body.type,
+      value:      body.value,
+      first_name: parts[0] || "",
+      last_name:  parts.slice(1).join(" ") || "",
+    });
+    console.log("[identify] BVN submitted for", customerCode);
+  } catch (err: any) {
+    console.error("[identify] BVN submission failed:", err.message);
+    return res.status(502).json({ error: "Could not submit identity verification. Please try again." });
   }
 
-  console.log("[identify] wallet created:", user.virtualAccount?.accountNumber);
-  return res.json({ status: "verified" });
+  // Step D: Try DVA immediately (succeeds if Paystack verifies BVN synchronously)
+  const ok = await createDVA(user);
+  if (ok) {
+    console.log("[identify] DVA created immediately:", user.virtualAccount?.accountNumber);
+    return res.json({ status: "verified" });
+  }
+
+  // BVN verification still in progress — webhook will call createDVA when done.
+  // Flutter shows a static screen; next app open via restore()→refreshMe() picks it up.
+  console.log("[identify] BVN submitted, waiting for Paystack webhook to create DVA");
+  return res.json({ status: "submitted" });
 });
 
 // ── Wallet status check ───────────────────────────────────────────────────────
