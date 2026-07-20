@@ -399,19 +399,54 @@ paystackRouter.post("/identify", requireAuth, async (req, res) => {
 
 // ── Check identity/DVA status (Flutter polls this after pending identify) ──
 // GET /paystack/identify-status
+// Actively checks Paystack customer state and creates DVA if identified.
+// Does not rely on webhooks.
 paystackRouter.get("/identify-status", requireAuth, async (req, res) => {
-  const user = await UserModel.findById(req.user!._id).lean();
-  if (user?.virtualAccount?.accountNumber) {
-    return res.json({
-      status: "verified",
-      virtual_account: {
-        account_number: user.virtualAccount.accountNumber,
-        account_name:   user.virtualAccount.accountName,
-        bank_name:      user.virtualAccount.bankName,
-        bank_slug:      user.virtualAccount.bankSlug,
-      },
-    });
+  const user = await UserModel.findById(req.user!._id);
+  if (!user) return res.status(404).json({ error: "User not found" });
+
+  // Already has DVA — done
+  if (user.virtualAccount?.accountNumber) {
+    return res.json({ status: "verified" });
   }
+
+  const customerCode = user.paystackCustomerCode;
+  if (!customerCode) return res.json({ status: "pending" });
+
+  try {
+    const customerData = await paystackGet(`/customer/${customerCode}`);
+    const customer = customerData.data;
+
+    if (customer?.identified === true) {
+      // Customer verified — create DVA now
+      const dvaResult = await paystackPost("/dedicated_account", {
+        customer:       customerCode,
+        preferred_bank: "wema-bank",
+      });
+      const virtualAccount = {
+        accountNumber: dvaResult.data.account_number as string,
+        accountName:   dvaResult.data.account_name as string,
+        bankName:      dvaResult.data.bank.name as string,
+        bankSlug:      dvaResult.data.bank.slug as string,
+        customerId:    customerCode,
+      };
+      await UserModel.findByIdAndUpdate(user._id, { virtualAccount });
+      return res.json({ status: "verified" });
+    }
+
+    // Check if the latest identification attempt failed
+    const identifications: any[] = customer?.identifications ?? [];
+    const latest = identifications[identifications.length - 1];
+    if (latest?.status === "failed") {
+      return res.json({
+        status:  "failed",
+        message: "Identity verification failed. Please check your BVN/NIN and try again.",
+      });
+    }
+  } catch (err: any) {
+    console.error("[identify-status] error:", err.message);
+  }
+
   res.json({ status: "pending" });
 });
 
