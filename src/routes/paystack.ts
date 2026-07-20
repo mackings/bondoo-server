@@ -357,25 +357,62 @@ paystackRouter.post("/identify", requireAuth, async (req, res) => {
     value:   body.value,
   });
 
-  // Try to create DVA immediately (works if verification is synchronous)
-  try {
-    const dvaResult = await paystackPost("/dedicated_account", {
-      customer:       customerCode,
-      preferred_bank: "wema-bank",
-    });
-    const virtualAccount = {
-      accountNumber: dvaResult.data.account_number as string,
-      accountName:   dvaResult.data.account_name as string,
-      bankName:      dvaResult.data.bank.name as string,
-      bankSlug:      dvaResult.data.bank.slug as string,
-      customerId:    customerCode,
-    };
-    await UserModel.findByIdAndUpdate(user._id, { virtualAccount });
-    return res.json({ status: "verified", virtual_account: virtualAccount });
-  } catch {
-    // Identification is async — DVA will be created via customeridentification.success webhook
-    return res.json({ status: "pending" });
+  // Poll Paystack customer until identified (up to ~30 s, then fall back to webhook)
+  const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+  let identified = false;
+  for (let attempt = 0; attempt < 15; attempt++) {
+    await delay(2000);
+    try {
+      const customerData = await paystackGet(`/customer/${customerCode}`);
+      if (customerData.data?.identified === true) {
+        identified = true;
+        break;
+      }
+    } catch {
+      // ignore transient errors during polling
+    }
   }
+
+  if (identified) {
+    try {
+      const dvaResult = await paystackPost("/dedicated_account", {
+        customer:       customerCode,
+        preferred_bank: "wema-bank",
+      });
+      const virtualAccount = {
+        accountNumber: dvaResult.data.account_number as string,
+        accountName:   dvaResult.data.account_name as string,
+        bankName:      dvaResult.data.bank.name as string,
+        bankSlug:      dvaResult.data.bank.slug as string,
+        customerId:    customerCode,
+      };
+      await UserModel.findByIdAndUpdate(user._id, { virtualAccount });
+      return res.json({ status: "verified", virtual_account: virtualAccount });
+    } catch (err: any) {
+      return res.status(502).json({ error: `Wallet setup failed: ${err.message}` });
+    }
+  }
+
+  // Identification still processing — webhook will create DVA when ready
+  return res.json({ status: "pending" });
+});
+
+// ── Check identity/DVA status (Flutter polls this after pending identify) ──
+// GET /paystack/identify-status
+paystackRouter.get("/identify-status", requireAuth, async (req, res) => {
+  const user = await UserModel.findById(req.user!._id).lean();
+  if (user?.virtualAccount?.accountNumber) {
+    return res.json({
+      status: "verified",
+      virtual_account: {
+        account_number: user.virtualAccount.accountNumber,
+        account_name:   user.virtualAccount.accountName,
+        bank_name:      user.virtualAccount.bankName,
+        bank_slug:      user.virtualAccount.bankSlug,
+      },
+    });
+  }
+  res.json({ status: "pending" });
 });
 
 // ── Withdraw to bank account ───────────────────────────────────────────────
