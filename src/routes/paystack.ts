@@ -348,11 +348,44 @@ paystackRouter.post("/identify", requireAuth, async (req, res) => {
 
 // ── Check wallet creation status (Flutter polls this while waiting) ──────────
 // GET /paystack/identify-status
+// Also actively checks Paystack's customer API so we don't depend solely on webhooks.
 paystackRouter.get("/identify-status", requireAuth, async (req, res) => {
-  const user = await UserModel.findById(req.user!._id).lean();
-  if (user?.virtualAccount?.accountNumber) {
+  const user = await UserModel.findById(req.user!._id);
+  if (!user) return res.status(404).json({ error: "User not found" });
+
+  // Already has wallet — done
+  if (user.virtualAccount?.accountNumber) {
     return res.json({ status: "verified" });
   }
+
+  // No customer yet — can't check
+  if (!user.paystackCustomerCode) {
+    return res.json({ status: "pending" });
+  }
+
+  // Ask Paystack directly: has this customer been identified?
+  try {
+    const customerResult = await paystackGet(`/customer/${user.paystackCustomerCode}`);
+    const identified = customerResult.data?.identified === true;
+    console.log(`[identify-status] customer ${user.paystackCustomerCode} identified=${identified}`);
+
+    if (identified) {
+      // Customer is now identified — create DVA right now
+      const ok = await createDVA(user);
+      if (ok) return res.json({ status: "verified" });
+    }
+
+    // Check if identification was rejected
+    const identifications = customerResult.data?.identifications as any[] | undefined;
+    const latestIdent = identifications?.[identifications.length - 1];
+    if (latestIdent?.status === "failed") {
+      console.log(`[identify-status] identification failed: ${latestIdent?.remarks}`);
+      return res.json({ status: "failed", message: "Identity verification failed. Please check your BVN/NIN and try again." });
+    }
+  } catch (err: any) {
+    console.error("[identify-status] Paystack customer check error:", err.message);
+  }
+
   res.json({ status: "pending" });
 });
 
