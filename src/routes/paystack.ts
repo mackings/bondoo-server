@@ -114,22 +114,35 @@ paystackRouter.post("/webhook", async (req, res) => {
     return res.json({ ok: true });
   }
 
-  // ── DVA created after BVN/NIN identification confirmed by Paystack ──────────
-  if (event.event === "customeridentification.success") {
-    const customerCode = event.data?.customer?.customer_code ?? event.data?.customer_code;
-    console.log("[webhook] customeridentification.success for", customerCode);
-    if (customerCode) {
-      const identifiedUser = await UserModel.findOne({ paystackCustomerCode: customerCode });
-      if (identifiedUser && !identifiedUser.virtualAccount?.accountNumber) {
-        const ok = await createDVA(identifiedUser);
-        console.log("[webhook] DVA creation after identification:", ok ? "success" : "failed");
-      }
+  // ── DVA assigned via /dedicated_account/assign ───────────────────────────
+  if (event.event === "dedicatedaccount.assign.success") {
+    const d = event.data;
+    const customerCode = d?.customer?.customer_code;
+    const email        = d?.customer?.email;
+    console.log("[webhook] dedicatedaccount.assign.success for", customerCode, email);
+
+    const assignedUser = customerCode
+      ? await UserModel.findOne({ paystackCustomerCode: customerCode })
+      : email
+      ? await UserModel.findOne({ email: email.toLowerCase() })
+      : null;
+
+    if (assignedUser && !assignedUser.virtualAccount?.accountNumber) {
+      const virtualAccount = {
+        accountNumber: d.account_number as string,
+        accountName:   d.account_name as string,
+        bankName:      d.bank?.name as string,
+        bankSlug:      d.bank?.slug as string,
+        customerId:    customerCode as string,
+      };
+      await UserModel.findByIdAndUpdate(assignedUser._id, { virtualAccount });
+      console.log("[webhook] DVA saved for", email, "→", d.account_number);
     }
+    return res.json({ ok: true });
   }
 
-  if (event.event === "customeridentification.failed") {
-    const customerCode = event.data?.customer?.customer_code ?? event.data?.customer_code;
-    console.log("[webhook] customeridentification.failed for", customerCode, event.data?.reason);
+  if (event.event === "dedicatedaccount.assign.failed") {
+    console.log("[webhook] dedicatedaccount.assign.failed for", event.data?.customer?.email, event.data?.reason);
   }
 
   if (event.event === "charge.success") {
@@ -288,73 +301,55 @@ paystackRouter.post("/virtual-account", requireAuth, async (req, res) => {
   res.json(user.virtualAccount);
 });
 
-// ── BVN/NIN submission + wallet creation ─────────────────────────────────────
+// ── Identity verification + wallet creation via /dedicated_account/assign ────
 // POST /paystack/identify
-// Body: { type: "bvn" | "nin", value: "11-digit number" }
+// Body: { type, value, account_number, bank_code }
 //
-// Flow:
-//   1. Store BVN locally
-//   2. Create Paystack customer (Step C)
-//   3. Submit BVN to Paystack identification API
-//   4. Try DVA immediately — returns "verified" if Paystack approves fast
-//   5. If not ready yet — returns "submitted" so Flutter can show a static
-//      "wallet being set up" screen. Webhook (customeridentification.success)
-//      fires createDVA when Paystack finishes. Next app open picks it up via
-//      refreshMe() in restore() — no active polling needed.
+// Uses Paystack's single-call assign endpoint:
+//   POST /dedicated_account/assign — creates customer + validates identity + assigns DVA
+// Returns { status: "submitted" } immediately (async).
+// Webhook dedicatedaccount.assign.success saves the DVA to the user.
 paystackRouter.post("/identify", requireAuth, async (req, res) => {
   const body = z.object({
-    type:  z.enum(["bvn", "nin"]),
-    value: z.string().regex(/^\d{11}$/, "Must be exactly 11 digits"),
+    type:           z.enum(["bvn", "nin"]),
+    value:          z.string().regex(/^\d{11}$/, "Must be exactly 11 digits"),
+    account_number: z.string().min(10).max(10),
+    bank_code:      z.string().min(2).max(10),
   }).parse(req.body);
 
   const user = await UserModel.findById(req.user!._id);
   if (!user) return res.status(404).json({ error: "User not found" });
 
   if (user.virtualAccount?.accountNumber) {
-    await UserModel.findByIdAndUpdate(user._id, { "kyc.type": body.type, "kyc.value": body.value });
     return res.json({ status: "verified" });
   }
 
-  // Store BVN/NIN locally
+  // Store BVN/NIN locally for compliance
   await UserModel.findByIdAndUpdate(user._id, { "kyc.type": body.type, "kyc.value": body.value });
 
-  // Step C: Create Paystack customer
-  let customerCode: string;
-  try {
-    const c = await createOrGetPaystackCustomer(user);
-    customerCode = c.customerCode;
-  } catch (err: any) {
-    console.error("[identify] customer creation failed:", err.message);
-    return res.status(502).json({ error: "Could not create account profile. Please try again." });
-  }
+  // Single-call assign: creates customer + validates identity + assigns DVA
+  const parts = (user.displayName ?? "").split(" ");
+  const firstName = parts[0] || "User";
+  const lastName  = parts.slice(1).join(" ") || firstName;
 
-  // Submit BVN/NIN to Paystack for identification
   try {
-    const parts = (user.displayName ?? "").split(" ");
-    await paystackPost(`/customer/${customerCode}/identification`, {
-      country:    "NG",
-      type:       body.type,
-      value:      body.value,
-      first_name: parts[0] || "",
-      last_name:  parts.slice(1).join(" ") || "",
+    await paystackPost("/dedicated_account/assign", {
+      email:          user.email,
+      first_name:     firstName,
+      last_name:      lastName,
+      phone:          user.phone ?? "",
+      preferred_bank: "wema-bank",
+      country:        "NG",
+      [body.type]:    body.value,        // bvn: "..." or nin: "..."
+      account_number: body.account_number,
+      bank_code:      body.bank_code,
     });
-    console.log("[identify] BVN submitted for", customerCode);
+    console.log("[identify] assign submitted for", user.email);
+    return res.json({ status: "submitted" });
   } catch (err: any) {
-    console.error("[identify] BVN submission failed:", err.message);
-    return res.status(502).json({ error: "Could not submit identity verification. Please try again." });
+    console.error("[identify] assign failed:", err.message);
+    return res.status(502).json({ error: "Could not submit verification. Please try again." });
   }
-
-  // Step D: Try DVA immediately (succeeds if Paystack verifies BVN synchronously)
-  const ok = await createDVA(user);
-  if (ok) {
-    console.log("[identify] DVA created immediately:", user.virtualAccount?.accountNumber);
-    return res.json({ status: "verified" });
-  }
-
-  // BVN verification still in progress — webhook will call createDVA when done.
-  // Flutter shows a static screen; next app open via restore()→refreshMe() picks it up.
-  console.log("[identify] BVN submitted, waiting for Paystack webhook to create DVA");
-  return res.json({ status: "submitted" });
 });
 
 // ── Wallet status check ───────────────────────────────────────────────────────
