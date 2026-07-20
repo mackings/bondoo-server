@@ -7,6 +7,7 @@ import { NairaWalletModel, NairaTransactionModel, getOrCreateWallet } from "../m
 import { OrderModel } from "../models/order.js";
 import { ProductModel } from "../models/product.js";
 import { UserModel } from "../models/user.js";
+import { notifyUser } from "../notifications.js";
 
 export const paystackRouter = Router();
 
@@ -68,7 +69,7 @@ paystackRouter.post("/initialize", requireAuth, async (req, res) => {
       product_id: String(product._id),
       product_title: product.title,
     },
-    callback_url:  `${req.protocol}://${req.get("host")}/paystack/callback`,
+    callback_url:  `bondoo://payment/callback`,
   });
 
   res.json({
@@ -147,6 +148,18 @@ paystackRouter.post("/webhook", async (req, res) => {
       } catch (err: any) {
         // duplicate key on re-delivery — wallet already credited, safe to ignore
         if (err?.code !== 11000) console.error("[webhook] order create error:", err);
+      }
+
+      // Notify seller
+      const sellerUser = await UserModel.findById(seller_id);
+      if (sellerUser) {
+        const amountFormatted = `₦${amountNaira.toLocaleString("en-NG")}`;
+        notifyUser({
+          user: sellerUser,
+          title: "You just made a sale! 🎉",
+          body: `Your product "${product_title ?? "Product"}" sold for ${amountFormatted}. Your wallet has been credited.`,
+          data: { type: "sale", product_id: String(product_id) },
+        }).catch((err) => console.error("[webhook] notify seller error:", err));
       }
     }
   }
