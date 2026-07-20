@@ -91,6 +91,32 @@ paystackRouter.post("/webhook", async (req, res) => {
 
   const event = req.body as { event: string; data: any };
 
+  if (event.event === "customeridentification.success") {
+    const customerCode = event.data?.customer?.customer_code ?? event.data?.customer_code;
+    if (customerCode) {
+      const identifiedUser = await UserModel.findOne({ paystackCustomerCode: customerCode });
+      if (identifiedUser && !identifiedUser.virtualAccount?.accountNumber) {
+        try {
+          const dvaResult = await paystackPost("/dedicated_account", {
+            customer:       customerCode,
+            preferred_bank: "wema-bank",
+          });
+          await UserModel.findByIdAndUpdate(identifiedUser._id, {
+            virtualAccount: {
+              accountNumber: dvaResult.data.account_number as string,
+              accountName:   dvaResult.data.account_name as string,
+              bankName:      dvaResult.data.bank.name as string,
+              bankSlug:      dvaResult.data.bank.slug as string,
+              customerId:    customerCode,
+            },
+          });
+        } catch (err) {
+          console.error("[webhook] DVA after identification failed:", err);
+        }
+      }
+    }
+  }
+
   if (event.event === "charge.success") {
     const { reference, amount: amountKobo, metadata } = event.data;
     const amountNaira  = amountKobo / 100;
@@ -245,19 +271,24 @@ paystackRouter.post("/virtual-account", requireAuth, async (req, res) => {
   const firstName = parts[0] || "User";
   const lastName  = parts.slice(1).join(" ") || firstName;
 
-  // 1) Create Paystack customer
+  // 1) Create Paystack customer (reuse if already created)
   let customerCode: string;
-  try {
-    const customerResult = await paystackPost("/customer", {
-      email:      user.email,
-      first_name: firstName,
-      last_name:  lastName,
-      ...(user.phone ? { phone: user.phone } : {}),
-    });
-    customerCode = customerResult.data.customer_code as string;
-  } catch (err: any) {
-    console.error("[DVA] customer create failed:", err.message);
-    return res.status(502).json({ error: `Could not create Paystack customer: ${err.message}` });
+  if (user.paystackCustomerCode) {
+    customerCode = user.paystackCustomerCode;
+  } else {
+    try {
+      const customerResult = await paystackPost("/customer", {
+        email:      user.email,
+        first_name: firstName,
+        last_name:  lastName,
+        ...(user.phone ? { phone: user.phone } : {}),
+      });
+      customerCode = customerResult.data.customer_code as string;
+      await UserModel.findByIdAndUpdate(user._id, { paystackCustomerCode: customerCode });
+    } catch (err: any) {
+      console.error("[DVA] customer create failed:", err.message);
+      return res.status(502).json({ error: `Could not create Paystack customer: ${err.message}` });
+    }
   }
 
   // 2) Create dedicated virtual account
@@ -285,6 +316,66 @@ paystackRouter.post("/virtual-account", requireAuth, async (req, res) => {
   await UserModel.findByIdAndUpdate(user._id, { virtualAccount });
 
   res.json(virtualAccount);
+});
+
+// ── Customer identity verification (BVN / NIN) ────────────────────────────
+// POST /paystack/identify
+// Body: { type: "bvn" | "nin", value: "11-digit number" }
+paystackRouter.post("/identify", requireAuth, async (req, res) => {
+  const body = z.object({
+    type:  z.enum(["bvn", "nin"]),
+    value: z.string().regex(/^\d{11}$/, "Must be exactly 11 digits"),
+  }).parse(req.body);
+
+  const user = await UserModel.findById(req.user!._id);
+  if (!user) return res.status(404).json({ error: "User not found" });
+
+  if (user.virtualAccount?.accountNumber) {
+    return res.json({ status: "verified", virtual_account: user.virtualAccount });
+  }
+
+  const parts = (user.displayName ?? "").split(" ");
+  const firstName = parts[0] || "User";
+  const lastName  = parts.slice(1).join(" ") || firstName;
+
+  // Create or reuse Paystack customer
+  let customerCode = user.paystackCustomerCode;
+  if (!customerCode) {
+    const customerResult = await paystackPost("/customer", {
+      email:      user.email,
+      first_name: firstName,
+      last_name:  lastName,
+    });
+    customerCode = customerResult.data.customer_code as string;
+    await UserModel.findByIdAndUpdate(user._id, { paystackCustomerCode: customerCode });
+  }
+
+  // Submit BVN / NIN identification
+  await paystackPost(`/customer/${customerCode}/identification`, {
+    country: "NG",
+    type:    body.type,
+    value:   body.value,
+  });
+
+  // Try to create DVA immediately (works if verification is synchronous)
+  try {
+    const dvaResult = await paystackPost("/dedicated_account", {
+      customer:       customerCode,
+      preferred_bank: "wema-bank",
+    });
+    const virtualAccount = {
+      accountNumber: dvaResult.data.account_number as string,
+      accountName:   dvaResult.data.account_name as string,
+      bankName:      dvaResult.data.bank.name as string,
+      bankSlug:      dvaResult.data.bank.slug as string,
+      customerId:    customerCode,
+    };
+    await UserModel.findByIdAndUpdate(user._id, { virtualAccount });
+    return res.json({ status: "verified", virtual_account: virtualAccount });
+  } catch {
+    // Identification is async — DVA will be created via customeridentification.success webhook
+    return res.json({ status: "pending" });
+  }
 });
 
 // ── Withdraw to bank account ───────────────────────────────────────────────

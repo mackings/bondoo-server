@@ -46,6 +46,7 @@ export type UserDoc = {
     bankSlug: string;
     customerId: string;
   };
+  paystackCustomerCode?: string;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -105,6 +106,7 @@ const userSchema = new Schema<UserDoc>(
       bankSlug:      String,
       customerId:    String,
     },
+    paystackCustomerCode: { type: String },
   },
   { timestamps: true },
 );
