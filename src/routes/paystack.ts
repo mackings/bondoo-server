@@ -8,37 +8,9 @@ import { OrderModel } from "../models/order.js";
 import { ProductModel } from "../models/product.js";
 import { UserModel } from "../models/user.js";
 import { notifyUser } from "../notifications.js";
+import { paystackPost, paystackGet, tryCreateDVA } from "../lib/paystack-dva.js";
 
 export const paystackRouter = Router();
-
-const PAYSTACK_BASE = "https://api.paystack.co";
-
-async function paystackPost(path: string, body: object) {
-  const res = await fetch(`${PAYSTACK_BASE}${path}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${config.paystackSecretKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error((err as any).message ?? `Paystack error ${res.status}`);
-  }
-  return res.json() as Promise<any>;
-}
-
-async function paystackGet(path: string) {
-  const res = await fetch(`${PAYSTACK_BASE}${path}`, {
-    headers: { Authorization: `Bearer ${config.paystackSecretKey}` },
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error((err as any).message ?? `Paystack error ${res.status}`);
-  }
-  return res.json() as Promise<any>;
-}
 
 // ── Initialize payment ─────────────────────────────────────────────────────
 // POST /paystack/initialize
@@ -91,29 +63,63 @@ paystackRouter.post("/webhook", async (req, res) => {
 
   const event = req.body as { event: string; data: any };
 
+  // ── Wallet top-up via Dedicated Virtual Account ──────────────────────────
+  // Fires when someone sends money to a user's virtual account number
+  const isDvaCredit =
+    event.event === "dedicatedaccount.credit" ||
+    (event.event === "charge.success" && event.data?.dedicated_account);
+
+  if (isDvaCredit) {
+    const d = event.data;
+    const reference = d.reference as string;
+    const amountNaira = (d.amount as number) / 100;
+
+    // Find the user — try receiver account number first, then customer code
+    const accountNumber: string | undefined =
+      d.dedicated_account?.account?.account_number ??
+      d.dedicated_account?.account_number ??
+      d.authorization?.receiver_bank_account_number;
+    const customerCode: string | undefined =
+      d.customer?.customer_code ??
+      d.dedicated_account?.customer?.customer_code;
+
+    const depositUser = accountNumber
+      ? await UserModel.findOne({ "virtualAccount.accountNumber": accountNumber })
+      : customerCode
+      ? await UserModel.findOne({ paystackCustomerCode: customerCode })
+      : null;
+
+    if (depositUser) {
+      const dupCheck = await NairaTransactionModel.findOne({ reference });
+      if (!dupCheck) {
+        const depositWallet = await getOrCreateWallet(depositUser._id);
+        depositWallet.balance += amountNaira;
+        await depositWallet.save();
+        await NairaTransactionModel.create({
+          userId:      depositUser._id,
+          type:        "credit",
+          amount:      amountNaira,
+          description: `Wallet top-up`,
+          reference,
+          status:      "completed",
+        });
+        notifyUser({
+          user: depositUser,
+          title: "Wallet Credited 💰",
+          body:  `₦${amountNaira.toLocaleString("en-NG")} has been added to your wallet.`,
+          data:  { type: "wallet_credit" },
+        }).catch(() => {});
+      }
+    }
+    return res.json({ ok: true });
+  }
+
+  // ── DVA created after BVN/NIN identification ──────────────────────────────
   if (event.event === "customeridentification.success") {
     const customerCode = event.data?.customer?.customer_code ?? event.data?.customer_code;
     if (customerCode) {
       const identifiedUser = await UserModel.findOne({ paystackCustomerCode: customerCode });
-      if (identifiedUser && !identifiedUser.virtualAccount?.accountNumber) {
-        try {
-          const dvaResult = await paystackPost("/dedicated_account", {
-            customer:       customerCode,
-            preferred_bank: "wema-bank",
-          });
-          await UserModel.findByIdAndUpdate(identifiedUser._id, {
-            virtualAccount: {
-              accountNumber: dvaResult.data.account_number as string,
-              accountName:   dvaResult.data.account_name as string,
-              bankName:      dvaResult.data.bank.name as string,
-              bankSlug:      dvaResult.data.bank.slug as string,
-              customerId:    customerCode,
-            },
-          });
-        } catch (err) {
-          console.error("[webhook] DVA after identification failed:", err);
-        }
-      }
+      if (identifiedUser) await tryCreateDVA(identifiedUser);
     }
   }
 
@@ -262,60 +268,15 @@ paystackRouter.post("/virtual-account", requireAuth, async (req, res) => {
   const user = await UserModel.findById(req.user!._id);
   if (!user) return res.status(404).json({ error: "User not found" });
 
-  // Return existing DVA if already created
-  if (user.virtualAccount?.accountNumber) {
-    return res.json(user.virtualAccount);
-  }
+  if (user.virtualAccount?.accountNumber) return res.json(user.virtualAccount);
 
-  const parts = (user.displayName ?? user.username ?? "").split(" ");
-  const firstName = parts[0] || "User";
-  const lastName  = parts.slice(1).join(" ") || firstName;
-
-  // 1) Create Paystack customer (reuse if already created)
-  let customerCode: string;
-  if (user.paystackCustomerCode) {
-    customerCode = user.paystackCustomerCode;
-  } else {
-    try {
-      const customerResult = await paystackPost("/customer", {
-        email:      user.email,
-        first_name: firstName,
-        last_name:  lastName,
-        ...(user.phone ? { phone: user.phone } : {}),
-      });
-      customerCode = customerResult.data.customer_code as string;
-      await UserModel.findByIdAndUpdate(user._id, { paystackCustomerCode: customerCode });
-    } catch (err: any) {
-      console.error("[DVA] customer create failed:", err.message);
-      return res.status(502).json({ error: `Could not create Paystack customer: ${err.message}` });
-    }
-  }
-
-  // 2) Create dedicated virtual account
-  let dvaResult: any;
-  try {
-    dvaResult = await paystackPost("/dedicated_account", {
-      customer:       customerCode,
-      preferred_bank: "wema-bank",
-    });
-  } catch (err: any) {
-    console.error("[DVA] dedicated_account create failed:", err.message);
+  const created = await tryCreateDVA(user);
+  if (!created) {
     return res.status(502).json({
-      error: `Virtual account not available: ${err.message}. Contact support to enable this feature on your Paystack account.`,
+      error: "Virtual account could not be created. Identity verification may be required.",
     });
   }
-
-  const virtualAccount = {
-    accountNumber: dvaResult.data.account_number as string,
-    accountName:   dvaResult.data.account_name as string,
-    bankName:      dvaResult.data.bank.name as string,
-    bankSlug:      dvaResult.data.bank.slug as string,
-    customerId:    customerCode,
-  };
-
-  await UserModel.findByIdAndUpdate(user._id, { virtualAccount });
-
-  res.json(virtualAccount);
+  res.json(user.virtualAccount);
 });
 
 // ── Customer identity verification (BVN / NIN) ────────────────────────────

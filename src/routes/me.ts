@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { requireAuth } from "../middleware/auth.js";
 import { sendEmailOtp, verifyEmailOtp } from "../mailjet.js";
+import { tryCreateDVA } from "../lib/paystack-dva.js";
 import { PushTokenModel } from "../models/push-token.js";
 import { userPublic, walletJson } from "../models/serializers.js";
 import { WalletModel } from "../models/wallet.js";
@@ -161,5 +162,11 @@ meRouter.post("/otp/email/verify", async (req, res) => {
   if (!result.ok) return res.status(400).json({ error: result.error });
   req.user!.emailVerified = true;
   await req.user!.save();
+
+  // Retry DVA creation if it wasn't set up at signup (non-blocking)
+  if (!req.user!.virtualAccount?.accountNumber) {
+    tryCreateDVA(req.user!).catch((err) => console.error("[email-verify] DVA setup failed:", err));
+  }
+
   res.json(userPublic(req.user!));
 });
