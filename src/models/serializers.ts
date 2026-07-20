@@ -38,7 +38,7 @@ export function userPublic(user: any) {
         }
       : null,
     email_verified: user.emailVerified,
-    virtual_account: user.virtualAccount
+    virtual_account: user.virtualAccount?.accountNumber
       ? {
           account_number: user.virtualAccount.accountNumber,
           account_name:   user.virtualAccount.accountName,
