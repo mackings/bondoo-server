@@ -241,24 +241,38 @@ paystackRouter.post("/virtual-account", requireAuth, async (req, res) => {
     return res.json(user.virtualAccount);
   }
 
-  const parts = (user.displayName ?? user.username).split(" ");
-  const firstName = parts[0] ?? user.username;
-  const lastName  = parts.slice(1).join(" ") || user.username;
+  const parts = (user.displayName ?? user.username ?? "").split(" ");
+  const firstName = parts[0] || "User";
+  const lastName  = parts.slice(1).join(" ") || firstName;
 
   // 1) Create Paystack customer
-  const customerResult = await paystackPost("/customer", {
-    email:      user.email,
-    first_name: firstName,
-    last_name:  lastName,
-    ...(user.phone ? { phone: user.phone } : {}),
-  });
-  const customerCode = customerResult.data.customer_code as string;
+  let customerCode: string;
+  try {
+    const customerResult = await paystackPost("/customer", {
+      email:      user.email,
+      first_name: firstName,
+      last_name:  lastName,
+      ...(user.phone ? { phone: user.phone } : {}),
+    });
+    customerCode = customerResult.data.customer_code as string;
+  } catch (err: any) {
+    console.error("[DVA] customer create failed:", err.message);
+    return res.status(502).json({ error: `Could not create Paystack customer: ${err.message}` });
+  }
 
   // 2) Create dedicated virtual account
-  const dvaResult = await paystackPost("/dedicated_account", {
-    customer:       customerCode,
-    preferred_bank: "wema-bank",
-  });
+  let dvaResult: any;
+  try {
+    dvaResult = await paystackPost("/dedicated_account", {
+      customer:       customerCode,
+      preferred_bank: "wema-bank",
+    });
+  } catch (err: any) {
+    console.error("[DVA] dedicated_account create failed:", err.message);
+    return res.status(502).json({
+      error: `Virtual account not available: ${err.message}. Contact support to enable this feature on your Paystack account.`,
+    });
+  }
 
   const virtualAccount = {
     accountNumber: dvaResult.data.account_number as string,
