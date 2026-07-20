@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { requireAuth } from "../middleware/auth.js";
 import { sendEmailOtp, verifyEmailOtp } from "../mailjet.js";
-import { createOrGetPaystackCustomer } from "../lib/paystack-dva.js";
+import { createOrGetPaystackCustomer, createDVA } from "../lib/paystack-dva.js";
 import { PushTokenModel } from "../models/push-token.js";
 import { userPublic, walletJson } from "../models/serializers.js";
 import { WalletModel } from "../models/wallet.js";
@@ -163,8 +163,12 @@ meRouter.post("/otp/email/verify", async (req, res) => {
   req.user!.emailVerified = true;
   await req.user!.save();
 
-  // Ensure Paystack customer exists (needed for BVN identification later)
-  createOrGetPaystackCustomer(req.user!).catch((err) => console.error("[email-verify] Paystack customer setup failed:", err));
+  // Retry customer + DVA setup after email verification (in case signup attempt failed)
+  if (!req.user!.virtualAccount?.accountNumber) {
+    createOrGetPaystackCustomer(req.user!)
+      .then(() => createDVA(req.user!))
+      .catch((err) => console.error("[email-verify] Paystack wallet setup failed:", err.message));
+  }
 
   res.json(userPublic(req.user!));
 });

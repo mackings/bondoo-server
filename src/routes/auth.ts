@@ -4,7 +4,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { requireAuth, signToken } from "../middleware/auth.js";
 import { sendEmail, sendEmailOtp } from "../mailjet.js";
-import { createOrGetPaystackCustomer } from "../lib/paystack-dva.js";
+import { createOrGetPaystackCustomer, createDVA } from "../lib/paystack-dva.js";
 import { PasswordResetTokenModel } from "../models/password-reset-token.js";
 import { userPublic } from "../models/serializers.js";
 import { UserModel } from "../models/user.js";
@@ -66,8 +66,10 @@ authRouter.post("/signup", async (req, res) => {
     { userId: user._id, asset: "USDT", balance: 0 },
   ]);
 
-  // Create Paystack customer at signup so customer_code is ready for BVN identification later
-  createOrGetPaystackCustomer(user).catch((err) => console.error("[signup] Paystack customer setup failed:", err));
+  // Steps C+D (Retilda pattern): create Paystack customer + dedicated virtual account at signup
+  createOrGetPaystackCustomer(user)
+    .then(() => createDVA(user))
+    .catch((err) => console.error("[signup] Paystack wallet setup failed:", err.message));
 
   await sendEmailOtp({
     userId: String(user._id),
