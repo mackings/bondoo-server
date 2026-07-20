@@ -69,7 +69,7 @@ paystackRouter.post("/initialize", requireAuth, async (req, res) => {
       product_id: String(product._id),
       product_title: product.title,
     },
-    callback_url:  `bondoo://payment/callback`,
+    callback_url:  `${req.protocol}://${req.get("host")}/paystack/callback`,
   });
 
   res.json({
@@ -162,6 +162,14 @@ paystackRouter.post("/webhook", async (req, res) => {
   }
 
   res.json({ ok: true });
+});
+
+// ── Payment callback (Paystack redirects here after card flow) ────────────
+// GET /paystack/callback — redirects to bondoo:// deep link so Chrome Custom
+// Tab closes and returns the user to the app
+paystackRouter.get("/callback", (req, res) => {
+  const reference = (req.query.reference ?? req.query.trxref ?? "") as string;
+  res.redirect(`bondoo://payment/callback?reference=${encodeURIComponent(reference)}`);
 });
 
 // ── Verify payment (mobile polls after returning from browser) ─────────────
