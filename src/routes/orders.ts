@@ -113,11 +113,12 @@ ordersRouter.post("/:id/review", async (req, res) => {
   if (order.status !== "confirmed") {
     return res.status(400).json({ error: "Confirm delivery before leaving a review" });
   }
-  if (order.review) {
+  if (order.review?.rating) {
     return res.status(409).json({ error: "Review already submitted" });
   }
 
-  order.review = { rating: body.rating as any, comment: body.comment, createdAt: new Date() };
+  order.set("review", { rating: body.rating, comment: body.comment ?? null, createdAt: new Date() });
+  order.markModified("review");
   await order.save();
 
   res.json(orderJson(order));

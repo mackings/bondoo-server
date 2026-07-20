@@ -144,7 +144,7 @@ export function orderJson(order: any) {
       tracking_url:  e.trackingUrl ?? null,
       created_at:    e.createdAt,
     })),
-    review: order.review
+    review: order.review?.rating
       ? { rating: order.review.rating, comment: order.review.comment ?? null, created_at: order.review.createdAt }
       : null,
     created_at: order.createdAt,
