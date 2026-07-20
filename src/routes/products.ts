@@ -17,6 +17,7 @@ function productJson(p: any) {
     description: p.description ?? null,
     price:       p.price,
     images:      p.images ?? [],
+    category:    p.category ?? null,
     status:      p.status,
     created_at:  p.createdAt,
   };
@@ -53,6 +54,7 @@ productsRouter.post("/", async (req, res) => {
     description: z.string().trim().max(500).optional(),
     price:       z.number().min(0),
     images:      z.array(z.string().startsWith("data:image/").max(1_400_000)).max(3).default([]),
+    category:    z.string().trim().max(50).optional(),
   }).parse(req.body);
 
   const product = await ProductModel.create({
@@ -61,6 +63,7 @@ productsRouter.post("/", async (req, res) => {
     description: body.description,
     price:       body.price,
     images:      body.images,
+    category:    body.category,
   });
   const populated = await product.populate("sellerId");
   res.status(201).json(productJson(populated));
@@ -76,6 +79,7 @@ productsRouter.patch("/:id", async (req, res) => {
     description: z.string().trim().max(500).optional(),
     price:       z.number().min(0).optional(),
     images:      z.array(z.string().startsWith("data:image/").max(1_400_000)).max(3).optional(),
+    category:    z.string().trim().max(50).optional(),
     status:      z.enum(["active", "sold"]).optional(),
   }).parse(req.body);
 
