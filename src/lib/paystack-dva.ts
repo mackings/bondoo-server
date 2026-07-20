@@ -31,42 +31,54 @@ export async function paystackGet(path: string) {
 }
 
 /**
- * Creates a Paystack customer + Dedicated Virtual Account for a user.
- * - Reuses existing paystackCustomerCode if already saved.
- * - Saves customerCode and virtualAccount to the user document on success.
- * - Returns true if DVA was created, false if Paystack rejected it
- *   (e.g. "Customer has not been identified" on accounts that require BVN first).
+ * Step 1: Create Paystack customer and persist the numeric id + customer_code.
+ * Called at signup and email verification — NOT DVA creation yet.
  */
-export async function tryCreateDVA(user: any): Promise<boolean> {
+export async function createOrGetPaystackCustomer(
+  user: any
+): Promise<{ customerId: number; customerCode: string }> {
+  if (user.paystackCustomerId && user.paystackCustomerCode) {
+    return { customerId: user.paystackCustomerId, customerCode: user.paystackCustomerCode };
+  }
+
+  const parts = (user.displayName ?? "").split(" ");
+  const firstName = parts[0] || "User";
+  const lastName  = parts.slice(1).join(" ") || firstName;
+
+  const result = await paystackPost("/customer", {
+    email:      user.email,
+    first_name: firstName,
+    last_name:  lastName,
+    ...(user.phone ? { phone: user.phone } : {}),
+  });
+
+  const customerId   = result.data.id as number;
+  const customerCode = result.data.customer_code as string;
+
+  await UserModel.findByIdAndUpdate(user._id, {
+    paystackCustomerId:   customerId,
+    paystackCustomerCode: customerCode,
+  });
+  user.paystackCustomerId   = customerId;
+  user.paystackCustomerCode = customerCode;
+
+  return { customerId, customerCode };
+}
+
+/**
+ * Step 2: Create Dedicated Virtual Account for an already-identified customer.
+ * Uses the numeric customer.id exactly as the Retilda pattern.
+ * Returns true on success, false if Paystack rejects (e.g. not yet identified).
+ */
+export async function createDVA(user: any): Promise<boolean> {
+  if (user.virtualAccount?.accountNumber) return true;
+
+  const customerId = user.paystackCustomerId as number | undefined;
+  if (!customerId) return false;
+
   try {
-    if (user.virtualAccount?.accountNumber) return true; // already has DVA
-
-    const parts = (user.displayName ?? "").split(" ");
-    const firstName = parts[0] || "User";
-    const lastName  = parts.slice(1).join(" ") || firstName;
-
-    // Step 1: Create or reuse Paystack customer
-    // We store both the numeric id (used for DVA) and the customer_code (used for webhooks)
-    let customerId   = user.paystackCustomerId as number | undefined;
-    let customerCode = user.paystackCustomerCode as string | undefined;
-
-    if (!customerId) {
-      const customerResult = await paystackPost("/customer", {
-        email:      user.email,
-        first_name: firstName,
-        last_name:  lastName,
-        ...(user.phone ? { phone: user.phone } : {}),
-      });
-      customerId   = customerResult.data.id as number;           // numeric  e.g. 84312
-      customerCode = customerResult.data.customer_code as string; // "CUS_xxx"
-      user.paystackCustomerId   = customerId;
-      user.paystackCustomerCode = customerCode;
-      await UserModel.findByIdAndUpdate(user._id, { paystackCustomerId: customerId, paystackCustomerCode: customerCode });
-    }
-
-    // Step 2: Create Dedicated Virtual Account using numeric customer id (mirrors Retilda)
     const dvaResult = await paystackPost("/dedicated_account", {
-      customer:       customerId,
+      customer:       customerId,   // numeric id — same as Retilda's customer.id
       preferred_bank: "wema-bank",
     });
 
@@ -75,14 +87,14 @@ export async function tryCreateDVA(user: any): Promise<boolean> {
       accountName:   dvaResult.data.account_name as string,
       bankName:      dvaResult.data.bank.name as string,
       bankSlug:      dvaResult.data.bank.slug as string,
-      customerId:    customerCode,
+      customerId:    user.paystackCustomerCode as string,
     };
 
     user.virtualAccount = virtualAccount;
     await UserModel.findByIdAndUpdate(user._id, { virtualAccount });
     return true;
   } catch (err: any) {
-    console.error("[tryCreateDVA] failed:", err.message);
+    console.error("[createDVA] failed:", err.message);
     return false;
   }
 }

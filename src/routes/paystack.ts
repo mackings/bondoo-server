@@ -8,7 +8,7 @@ import { OrderModel } from "../models/order.js";
 import { ProductModel } from "../models/product.js";
 import { UserModel } from "../models/user.js";
 import { notifyUser } from "../notifications.js";
-import { paystackPost, paystackGet, tryCreateDVA } from "../lib/paystack-dva.js";
+import { paystackPost, paystackGet, createOrGetPaystackCustomer, createDVA } from "../lib/paystack-dva.js";
 
 export const paystackRouter = Router();
 
@@ -114,13 +114,22 @@ paystackRouter.post("/webhook", async (req, res) => {
     return res.json({ ok: true });
   }
 
-  // ── DVA created after BVN/NIN identification ──────────────────────────────
+  // ── DVA created after BVN/NIN identification confirmed by Paystack ──────────
   if (event.event === "customeridentification.success") {
     const customerCode = event.data?.customer?.customer_code ?? event.data?.customer_code;
+    console.log("[webhook] customeridentification.success for", customerCode);
     if (customerCode) {
       const identifiedUser = await UserModel.findOne({ paystackCustomerCode: customerCode });
-      if (identifiedUser) await tryCreateDVA(identifiedUser);
+      if (identifiedUser && !identifiedUser.virtualAccount?.accountNumber) {
+        const ok = await createDVA(identifiedUser);
+        console.log("[webhook] DVA creation after identification:", ok ? "success" : "failed");
+      }
     }
+  }
+
+  if (event.event === "customeridentification.failed") {
+    const customerCode = event.data?.customer?.customer_code ?? event.data?.customer_code;
+    console.log("[webhook] customeridentification.failed for", customerCode, event.data?.reason);
   }
 
   if (event.event === "charge.success") {
@@ -263,27 +272,24 @@ paystackRouter.get("/virtual-account", requireAuth, async (req, res) => {
   res.json(null);
 });
 
-// POST /paystack/virtual-account — creates Paystack customer + DVA (idempotent)
+// POST /paystack/virtual-account — no-op if already exists; requires /identify first
 paystackRouter.post("/virtual-account", requireAuth, async (req, res) => {
   const user = await UserModel.findById(req.user!._id);
   if (!user) return res.status(404).json({ error: "User not found" });
-
   if (user.virtualAccount?.accountNumber) return res.json(user.virtualAccount);
-
-  const created = await tryCreateDVA(user);
-  if (!created) {
-    return res.status(502).json({
-      error: "Virtual account could not be created. Identity verification may be required.",
-    });
-  }
-  res.json(user.virtualAccount);
+  return res.status(400).json({ error: "Please complete identity verification first." });
 });
 
-// ── Store BVN/NIN for KYC + create wallet (POST /customer → POST /dedicated_account)
+// ── BVN/NIN identity verification → wallet creation ──────────────────────────
 // POST /paystack/identify
 // Body: { type: "bvn" | "nin", value: "11-digit number" }
-// Stores the number locally for KYC records, then creates Paystack customer + DVA
-// exactly as the Retilda pattern: no identification API call, just 2 Paystack requests.
+//
+// Flow:
+//   1. Create Paystack customer (POST /customer)
+//   2. Submit BVN/NIN identification (POST /customer/{code}/identification)
+//   3. Try DVA immediately (POST /dedicated_account) — succeeds if Paystack is fast
+//   4. Return "verified" if DVA created, or "pending" for Flutter to keep polling
+//      (webhook customeridentification.success → createDVA will fire when Paystack confirms)
 paystackRouter.post("/identify", requireAuth, async (req, res) => {
   const body = z.object({
     type:  z.enum(["bvn", "nin"]),
@@ -298,19 +304,46 @@ paystackRouter.post("/identify", requireAuth, async (req, res) => {
     return res.json({ status: "verified", virtual_account: user.virtualAccount });
   }
 
-  // Store BVN/NIN locally for KYC records
+  // Step 1: Store BVN/NIN locally for KYC
   await UserModel.findByIdAndUpdate(user._id, {
     "kyc.type":  body.type,
     "kyc.value": body.value,
   });
 
-  // Create Paystack customer (POST /customer) + DVA (POST /dedicated_account)
-  const created = await tryCreateDVA(user);
-  if (!created) {
-    return res.status(502).json({ error: "Could not create wallet. Please try again." });
+  // Step 2: Ensure Paystack customer exists
+  let customerCode: string;
+  try {
+    const c = await createOrGetPaystackCustomer(user);
+    customerCode = c.customerCode;
+  } catch (err: any) {
+    console.error("[identify] createOrGetPaystackCustomer failed:", err.message);
+    return res.status(502).json({ error: "Could not create account profile. Please try again." });
   }
 
-  return res.json({ status: "verified", virtual_account: user.virtualAccount });
+  // Step 3: Submit BVN/NIN to Paystack identification API
+  try {
+    const identPayload: Record<string, string> = {
+      country: "NG",
+      type:    body.type,   // "bvn" or "nin"
+      value:   body.value,
+    };
+    const identResult = await paystackPost(`/customer/${customerCode}/identification`, identPayload);
+    console.log("[identify] identification submitted:", identResult.status, identResult.message);
+  } catch (err: any) {
+    console.error("[identify] identification failed:", err.message);
+    return res.status(502).json({ error: "Identity verification could not be submitted. Please try again." });
+  }
+
+  // Step 4: Try DVA immediately (works if Paystack identifies synchronously)
+  const dvaCreated = await createDVA(user);
+  if (dvaCreated) {
+    console.log("[identify] DVA created immediately after identification");
+    return res.json({ status: "verified", virtual_account: user.virtualAccount });
+  }
+
+  // DVA not ready yet — Flutter will poll /identify-status while webhook fires createDVA
+  console.log("[identify] DVA pending — waiting for customeridentification.success webhook");
+  return res.json({ status: "pending" });
 });
 
 // ── Check wallet creation status (Flutter polls this while waiting) ──────────
