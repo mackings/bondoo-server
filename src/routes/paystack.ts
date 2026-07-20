@@ -254,10 +254,10 @@ paystackRouter.post("/virtual-account", requireAuth, async (req, res) => {
   });
   const customerCode = customerResult.data.customer_code as string;
 
-  // 2) Create dedicated virtual account (test-bank works in test mode)
+  // 2) Create dedicated virtual account
   const dvaResult = await paystackPost("/dedicated_account", {
     customer:       customerCode,
-    preferred_bank: "test-bank",
+    preferred_bank: "wema-bank",
   });
 
   const virtualAccount = {
