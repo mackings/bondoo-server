@@ -47,6 +47,8 @@ export type UserDoc = {
     customerId: string;
   };
   paystackCustomerCode?: string;
+  paystackCustomerId?: number;
+  kyc?: { type: string; value: string };
   createdAt: Date;
   updatedAt: Date;
 };
@@ -107,6 +109,8 @@ const userSchema = new Schema<UserDoc>(
       customerId:    String,
     },
     paystackCustomerCode: { type: String },
+    paystackCustomerId:   { type: Number },
+    kyc: { type: { type: String }, value: String },
   },
   { timestamps: true },
 );

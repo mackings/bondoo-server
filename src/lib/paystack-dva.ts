@@ -46,22 +46,27 @@ export async function tryCreateDVA(user: any): Promise<boolean> {
     const lastName  = parts.slice(1).join(" ") || firstName;
 
     // Step 1: Create or reuse Paystack customer
+    // We store both the numeric id (used for DVA) and the customer_code (used for webhooks)
+    let customerId   = user.paystackCustomerId as number | undefined;
     let customerCode = user.paystackCustomerCode as string | undefined;
-    if (!customerCode) {
+
+    if (!customerId) {
       const customerResult = await paystackPost("/customer", {
         email:      user.email,
         first_name: firstName,
         last_name:  lastName,
         ...(user.phone ? { phone: user.phone } : {}),
       });
-      customerCode = customerResult.data.customer_code as string;
+      customerId   = customerResult.data.id as number;           // numeric  e.g. 84312
+      customerCode = customerResult.data.customer_code as string; // "CUS_xxx"
+      user.paystackCustomerId   = customerId;
       user.paystackCustomerCode = customerCode;
-      await UserModel.findByIdAndUpdate(user._id, { paystackCustomerCode: customerCode });
+      await UserModel.findByIdAndUpdate(user._id, { paystackCustomerId: customerId, paystackCustomerCode: customerCode });
     }
 
-    // Step 2: Create Dedicated Virtual Account
+    // Step 2: Create Dedicated Virtual Account using numeric customer id (mirrors Retilda)
     const dvaResult = await paystackPost("/dedicated_account", {
-      customer:       customerCode,
+      customer:       customerId,
       preferred_bank: "wema-bank",
     });
 
