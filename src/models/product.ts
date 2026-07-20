@@ -8,7 +8,7 @@ export type ProductDoc = {
   price: number;           // in Naira
   images: string[];        // up to 3 base64 data URLs
   category?: string;
-  status: "active" | "sold";
+  status: "active" | "out_of_stock" | "sold";
   createdAt: Date;
   updatedAt: Date;
 };
@@ -21,7 +21,7 @@ const productSchema = new Schema<ProductDoc>(
     price:       { type: Number, required: true, min: 0 },
     images:      { type: [String], default: [], validate: [(v: string[]) => v.length <= 3, "Max 3 images"] },
     category:    { type: String, maxlength: 50 },
-    status:      { type: String, enum: ["active", "sold"], default: "active" },
+    status:      { type: String, enum: ["active", "out_of_stock", "sold"], default: "active" },
   },
   { timestamps: true },
 );

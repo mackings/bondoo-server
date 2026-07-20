@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { requireAuth } from "../middleware/auth.js";
 import { ProductModel } from "../models/product.js";
+import { OrderModel } from "../models/order.js";
 import { UserModel } from "../models/user.js";
 import { userPublic } from "../models/serializers.js";
 
@@ -23,9 +24,9 @@ function productJson(p: any) {
   };
 }
 
-// GET /products — active listings excluding own
+// GET /products — all visible listings (active + out_of_stock)
 productsRouter.get("/", async (req, res) => {
-  const products = await ProductModel.find({ status: "active" })
+  const products = await ProductModel.find({ status: { $in: ["active", "out_of_stock"] } })
     .sort({ createdAt: -1 })
     .limit(100)
     .populate("sellerId");
@@ -80,7 +81,7 @@ productsRouter.patch("/:id", async (req, res) => {
     price:       z.number().min(0).optional(),
     images:      z.array(z.string().startsWith("data:image/").max(1_400_000)).max(3).optional(),
     category:    z.string().trim().max(50).optional(),
-    status:      z.enum(["active", "sold"]).optional(),
+    status:      z.enum(["active", "out_of_stock"]).optional(),
   }).parse(req.body);
 
   Object.assign(product, body);
@@ -89,9 +90,21 @@ productsRouter.patch("/:id", async (req, res) => {
   res.json(productJson(populated));
 });
 
-// DELETE /products/:id — delete own listing
+// DELETE /products/:id — delete own listing (blocked while any order is unresolved)
 productsRouter.delete("/:id", async (req, res) => {
-  const product = await ProductModel.findOneAndDelete({ _id: req.params.id, sellerId: req.user!._id });
+  const product = await ProductModel.findOne({ _id: req.params.id, sellerId: req.user!._id });
   if (!product) return res.status(404).json({ error: "Product not found" });
+
+  const activeOrder = await OrderModel.findOne({
+    productId: req.params.id,
+    status: { $nin: ["delivered", "confirmed", "cancelled"] },
+  });
+  if (activeOrder) {
+    return res.status(400).json({
+      error: "Cannot delete: there is an active order for this product. Wait until the buyer confirms delivery.",
+    });
+  }
+
+  await product.deleteOne();
   res.json({ ok: true });
 });

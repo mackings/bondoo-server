@@ -129,9 +129,6 @@ paystackRouter.post("/webhook", async (req, res) => {
       meta:        { seller_id, product_id, product_title },
     });
 
-    // Mark product as sold
-    if (product_id) await ProductModel.findByIdAndUpdate(product_id, { status: "sold" });
-
     // Create order record (idempotent — paystackReference is unique)
     if (product_id && buyer_id && seller_id) {
       try {
