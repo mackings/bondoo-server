@@ -17,11 +17,9 @@ meRouter.get("/profile", async (req, res) => {
 meRouter.patch("/profile", async (req, res) => {
   const body = z.object({
     display_name: z.string().min(1).optional(),
-    username: z.string().min(1).regex(/^[a-z0-9_]+$/).optional(),
   }).parse(req.body);
 
   if (body.display_name) req.user!.displayName = body.display_name;
-  if (body.username) req.user!.username = body.username;
   await req.user!.save();
   res.json(userPublic(req.user!));
 });
