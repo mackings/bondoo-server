@@ -180,6 +180,37 @@ chatRouter.post("/conversations/:id/images", async (req, res) => {
   res.status(201).json(imagePayload);
 });
 
+chatRouter.post("/conversations/:id/product-inquiries", async (req, res) => {
+  const body = z.object({
+    body:                    z.string().trim().max(4000).optional(),
+    product_id:              z.string().optional(),
+    product_title:           z.string().max(100).optional(),
+    product_price:           z.number().min(0).optional(),
+    product_image_data_url:  z.string().startsWith("data:image/").max(4_000_000).optional(),
+  }).parse(req.body);
+  if (!body.body && !body.product_id) {
+    return res.status(400).json({ error: "Message must include text or a product reference." });
+  }
+  const conversation = await ConversationModel.findById(req.params.id);
+  if (!conversation || !conversation.memberIds.some((id) => String(id) === req.userId)) return res.status(404).json({ error: "Conversation not found" });
+  const message = await MessageModel.create({
+    conversationId:      conversation._id,
+    senderId:            req.user!._id,
+    body:                body.body ?? undefined,
+    kind:                "product_inquiry",
+    productId:           body.product_id,
+    productTitle:        body.product_title,
+    productPrice:        body.product_price,
+    productImageDataUrl: body.product_image_data_url,
+  });
+  conversation.lastMessageAt = new Date();
+  await conversation.save();
+  const payload = messageJson(message);
+  emitNewMessage(conversation.memberIds.map(String), payload);
+  await notifyConversationRecipients(conversation, message, req.user!);
+  res.status(201).json(payload);
+});
+
 chatRouter.post("/conversations/:id/story-replies", async (req, res) => {
   const body = z.object({
     body: z.string().trim().max(4000).optional(),

@@ -38,6 +38,14 @@ export function userPublic(user: any) {
         }
       : null,
     email_verified: user.emailVerified,
+    virtual_account: user.virtualAccount
+      ? {
+          account_number: user.virtualAccount.accountNumber,
+          account_name:   user.virtualAccount.accountName,
+          bank_name:      user.virtualAccount.bankName,
+          bank_slug:      user.virtualAccount.bankSlug,
+        }
+      : null,
     created_at: user.createdAt,
     updated_at: user.updatedAt,
   };
@@ -66,6 +74,10 @@ export function messageJson(message: any) {
     story_reply_image_data_url: message.storyReplyImageDataUrl ?? null,
     story_reply_caption: message.storyReplyCaption ?? null,
     story_reply_poster_name: message.storyReplyPosterName ?? null,
+    product_id: message.productId ?? null,
+    product_title: message.productTitle ?? null,
+    product_price: message.productPrice ?? null,
+    product_image_data_url: message.productImageDataUrl ?? null,
     transfer_asset: message.transferAsset ?? null,
     transfer_amount: message.transferAmount ?? null,
     transfer_note: message.transferNote ?? null,
@@ -98,6 +110,45 @@ export function offerJson(offer: any) {
     status: offer.status,
     created_at: offer.createdAt,
     updated_at: offer.updatedAt,
+  };
+}
+
+export function orderJson(order: any) {
+  const pickUser = (u: any) =>
+    u?.username
+      ? { id: String(u._id), username: u.username, display_name: u.displayName ?? null, avatar_url: u.avatarUrl ?? null }
+      : null;
+  const pickProduct = (p: any) =>
+    p?.title
+      ? { id: String(p._id), title: p.title, images: p.images ?? [], status: p.status }
+      : null;
+
+  return {
+    id:                 String(order._id),
+    product_id:         String(order.productId?._id ?? order.productId),
+    product:            pickProduct(order.productId),
+    buyer_id:           String(order.buyerId?._id ?? order.buyerId),
+    buyer:              pickUser(order.buyerId),
+    seller_id:          String(order.sellerId?._id ?? order.sellerId),
+    seller:             pickUser(order.sellerId),
+    product_snapshot:   order.productSnapshot,
+    amount:             order.amount,
+    paystack_reference: order.paystackReference,
+    status:             order.status,
+    tracking_code:      order.trackingCode ?? null,
+    tracking_url:       order.trackingUrl ?? null,
+    timeline: (order.timeline ?? []).map((e: any) => ({
+      status:        e.status,
+      note:          e.note ?? null,
+      tracking_code: e.trackingCode ?? null,
+      tracking_url:  e.trackingUrl ?? null,
+      created_at:    e.createdAt,
+    })),
+    review: order.review
+      ? { rating: order.review.rating, comment: order.review.comment ?? null, created_at: order.review.createdAt }
+      : null,
+    created_at: order.createdAt,
+    updated_at: order.updatedAt,
   };
 }
 

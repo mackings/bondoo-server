@@ -15,7 +15,7 @@ export type MessageDoc = {
   _id: mongoose.Types.ObjectId;
   conversationId: mongoose.Types.ObjectId;
   senderId: mongoose.Types.ObjectId;
-  kind: "text" | "transfer" | "offer" | "voice" | "image" | "trade_proposal" | "trade_update" | "story_reply";
+  kind: "text" | "transfer" | "offer" | "voice" | "image" | "trade_proposal" | "trade_update" | "story_reply" | "product_inquiry";
   body?: string;
   voiceDataUrl?: string;
   voiceDurationMs?: number;
@@ -23,6 +23,10 @@ export type MessageDoc = {
   storyReplyImageDataUrl?: string;
   storyReplyCaption?: string;
   storyReplyPosterName?: string;
+  productId?: string;
+  productTitle?: string;
+  productPrice?: number;
+  productImageDataUrl?: string;
   transferAsset?: string;
   transferAmount?: number;
   transferNote?: string;
@@ -53,7 +57,7 @@ const messageSchema = new Schema<MessageDoc>(
   {
     conversationId: { type: Schema.Types.ObjectId, ref: "Conversation", required: true, index: true },
     senderId: { type: Schema.Types.ObjectId, ref: "User", required: true },
-    kind: { type: String, enum: ["text", "transfer", "offer", "voice", "image", "trade_proposal", "trade_update", "story_reply"], default: "text" },
+    kind: { type: String, enum: ["text", "transfer", "offer", "voice", "image", "trade_proposal", "trade_update", "story_reply", "product_inquiry"], default: "text" },
     body: String,
     voiceDataUrl: String,
     voiceDurationMs: Number,
@@ -61,6 +65,10 @@ const messageSchema = new Schema<MessageDoc>(
     storyReplyImageDataUrl: String,
     storyReplyCaption: String,
     storyReplyPosterName: String,
+    productId: String,
+    productTitle: String,
+    productPrice: Number,
+    productImageDataUrl: String,
     transferAsset: String,
     transferAmount: Number,
     transferNote: String,

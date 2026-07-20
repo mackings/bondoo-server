@@ -39,6 +39,13 @@ export type UserDoc = {
   walletIndex?: number;
   lastWalletScan?: Date;
   emailVerified: boolean;
+  virtualAccount?: {
+    accountNumber: string;
+    accountName: string;
+    bankName: string;
+    bankSlug: string;
+    customerId: string;
+  };
   createdAt: Date;
   updatedAt: Date;
 };
@@ -91,6 +98,13 @@ const userSchema = new Schema<UserDoc>(
     walletIndex:    { type: Number },
     lastWalletScan: { type: Date },
     emailVerified:  { type: Boolean, default: false },
+    virtualAccount: {
+      accountNumber: String,
+      accountName:   String,
+      bankName:      String,
+      bankSlug:      String,
+      customerId:    String,
+    },
   },
   { timestamps: true },
 );
